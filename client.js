@@ -1,4 +1,4 @@
-const socket = io();
+const socket = io('https://rgp-game.onrender.com');
 
 // Элементы
 const btnRed = document.getElementById('btn-red');
