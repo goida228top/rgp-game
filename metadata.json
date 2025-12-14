@@ -1,0 +1,5 @@
+{
+  "name": "Битва Кликов",
+  "description": "Многопользовательская игра на Node.js и Socket.io",
+  "requestFramePermissions": []
+}

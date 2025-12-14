@@ -1,0 +1,40 @@
+@import url('https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Roboto+Mono:wght@400;700&display=swap');
+
+body {
+    font-family: system-ui, -apple-system, sans-serif;
+    touch-action: manipulation; /* Убирает задержку тапа на мобильных */
+}
+
+h1, .font-black {
+    font-family: 'Black Ops One', system-ui;
+    letter-spacing: 0.05em;
+}
+
+#status-text {
+    font-family: 'Roboto Mono', monospace;
+}
+
+.click-particle {
+    position: absolute;
+    font-weight: 900;
+    font-size: 32px;
+    pointer-events: none;
+    animation: floatUp 0.8s cubic-bezier(0, .9, .57, 1) forwards;
+    z-index: 100;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+@keyframes floatUp {
+    0% {
+        transform: translateY(0) scale(0.5) rotate(0deg);
+        opacity: 0;
+    }
+    20% {
+        opacity: 1;
+        transform: translateY(-20px) scale(1.2) rotate(-5deg);
+    }
+    100% {
+        transform: translateY(-150px) scale(1) rotate(10deg);
+        opacity: 0;
+    }
+}
