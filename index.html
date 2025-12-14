@@ -5,8 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Битва Кликов 2.0</title>
     <link rel="stylesheet" href="style.css">
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <!-- Socket.IO Библиотека -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <!-- Твой скрипт клиента -->
     <script src="client.js" defer></script>
 </head>
 <body class="bg-slate-900 text-white min-h-screen flex flex-col items-center justify-center overflow-hidden transition-colors duration-700 select-none" id="main-body">
@@ -14,7 +17,7 @@
     <!-- Индикатор статуса -->
     <div class="absolute top-4 right-4 flex items-center gap-2 bg-slate-800/50 px-3 py-1 rounded-full backdrop-blur-sm z-50">
         <div id="status-dot" class="w-2.5 h-2.5 rounded-full bg-red-500 transition-colors duration-300"></div>
-        <span id="status-text" class="text-xs font-mono font-bold text-slate-300">OFFLINE</span>
+        <span id="status-text" class="text-xs font-mono font-bold text-slate-300">CONNECTING...</span>
     </div>
 
     <!-- Заголовок -->
@@ -33,17 +36,14 @@
         <div class="flex-1 w-full flex flex-col items-center group relative">
             <div class="text-6xl md:text-9xl font-black mb-4 tabular-nums text-red-100 drop-shadow-lg transition-transform" id="score-red">0</div>
             <button id="btn-red" class="w-full h-full min-h-[160px] md:aspect-square md:h-80 rounded-3xl bg-gradient-to-br from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 active:scale-95 shadow-[0_8px_0_rgb(80,0,0)] active:shadow-none active:translate-y-[8px] transition-all flex items-center justify-center border-b-8 border-red-900 overflow-hidden relative">
-                <div class="absolute inset-0 bg-white/10 opacity-0 hover:opacity-10 transition-opacity"></div>
                 <span class="text-4xl md:text-6xl font-black transform -rotate-2 pointer-events-none drop-shadow-md">CLICK!</span>
             </button>
         </div>
 
-        <!-- Кнопка сброса (по центру) -->
+        <!-- Кнопка сброса -->
         <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 md:relative md:top-auto md:left-auto md:transform-none md:mt-24 z-20">
-            <button id="btn-reset" class="bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white p-4 rounded-full transition-all shadow-lg hover:shadow-xl border border-slate-700 active:scale-90 group" title="Сбросить счет">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 group-hover:rotate-180 transition-transform duration-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
+            <button id="btn-reset" class="bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white p-4 rounded-full transition-all shadow-lg hover:shadow-xl border border-slate-700 active:scale-90 group">
+                RESTART
             </button>
         </div>
 
@@ -51,15 +51,18 @@
         <div class="flex-1 w-full flex flex-col items-center group relative">
             <div class="text-6xl md:text-9xl font-black mb-4 tabular-nums text-blue-100 drop-shadow-lg transition-transform" id="score-blue">0</div>
             <button id="btn-blue" class="w-full h-full min-h-[160px] md:aspect-square md:h-80 rounded-3xl bg-gradient-to-br from-blue-600 to-blue-800 hover:from-blue-500 hover:to-blue-700 active:scale-95 shadow-[0_8px_0_rgb(0,0,80)] active:shadow-none active:translate-y-[8px] transition-all flex items-center justify-center border-b-8 border-blue-900 overflow-hidden relative">
-                <div class="absolute inset-0 bg-white/10 opacity-0 hover:opacity-10 transition-opacity"></div>
                 <span class="text-4xl md:text-6xl font-black transform rotate-2 pointer-events-none drop-shadow-md">CLICK!</span>
             </button>
         </div>
 
     </div>
 
-    <!-- Контейнер для частиц -->
+    <!-- Контейнер для эффектов -->
     <div id="effects-container" class="absolute inset-0 pointer-events-none overflow-hidden z-50"></div>
-
+    
+    <!-- КОНСОЛЬ ОТЛАДКИ (Видна на экране) -->
+    <div id="debug-console" class="fixed bottom-0 left-0 w-full h-32 bg-black/90 text-green-500 font-mono text-[10px] md:text-xs p-2 overflow-y-auto z-[100] border-t border-green-900 opacity-90 pointer-events-none">
+        <div>> System init...</div>
+    </div>
 </body>
 </html>
