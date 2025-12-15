@@ -49,7 +49,7 @@ io.on('connection', (socket) => {
   socket.emit('roomList', getRoomList());
 
   // Игрок создает комнату
-  socket.on('createRoom', (roomName) => {
+  socket.on('createRoom', (roomName, nickname) => {
     const roomId = crypto.randomBytes(4).toString('hex'); // Генерируем ID
     const name = roomName || `Комната ${roomId.substr(0,4)}`;
 
@@ -59,15 +59,15 @@ io.on('connection', (socket) => {
       players: {}
     };
 
-    joinRoom(socket, roomId);
+    joinRoom(socket, roomId, nickname);
     // Обновляем список комнат для всех в лобби
     io.emit('roomList', getRoomList());
   });
 
   // Игрок присоединяется к комнате
-  socket.on('joinRoom', (roomId) => {
+  socket.on('joinRoom', (roomId, nickname) => {
     if (rooms[roomId]) {
-      joinRoom(socket, roomId);
+      joinRoom(socket, roomId, nickname);
     } else {
       socket.emit('error', 'Комната не найдена');
     }
@@ -113,7 +113,7 @@ io.on('connection', (socket) => {
   });
 });
 
-function joinRoom(socket, roomId) {
+function joinRoom(socket, roomId, nickname) {
   socket.join(roomId); // Вступаем в комнату Socket.io
   
   // Создаем игрока
@@ -121,7 +121,8 @@ function joinRoom(socket, roomId) {
     x: Math.random() * (CANVAS_WIDTH - 100) + 50,
     y: Math.random() * (CANVAS_HEIGHT - 100) + 50,
     color: `hsl(${Math.random() * 360}, 70%, 50%)`,
-    id: socket.id
+    id: socket.id,
+    nickname: nickname || "Player"
   };
 
   // Сообщаем клиенту, что игра началась

@@ -136,6 +136,10 @@
     <div id="menu-screen">
         <h1>Online IO Game</h1>
         
+        <input type="text" id="nicknameInput" placeholder="Ваш никнейм" maxlength="15">
+        
+        <div style="border-top: 1px solid #333; margin: 15px 0;"></div>
+
         <input type="text" id="roomNameInput" placeholder="Название комнаты (необязательно)">
         <button class="btn" onclick="createRoom()">Создать комнату</button>
 
@@ -158,10 +162,9 @@
         const roomListEl = document.getElementById('room-list');
         const onlineEl = document.getElementById('online-counter');
         const roomNameInput = document.getElementById('roomNameInput');
+        const nicknameInput = document.getElementById('nicknameInput');
         
         // Автоматическое определение сервера
-        // Если мы локально, подключаемся к localhost:3000
-        // Если сайт загружен с удаленного хоста, используем Render
         const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         const SERVER_URL = isLocal ? 'http://localhost:3000' : 'https://rgp-game.onrender.com';
         
@@ -172,9 +175,13 @@
 
         const keys = { up: false, down: false, left: false, right: false };
 
+        // Сохранение/загрузка никнейма из localStorage
+        if (localStorage.getItem('playerNickname')) {
+            nicknameInput.value = localStorage.getItem('playerNickname');
+        }
+
         function init() {
             try {
-                // Подключаемся к серверу
                 console.log('Connecting to:', SERVER_URL);
                 socket = io(SERVER_URL, {
                     transports: ['websocket', 'polling']
@@ -196,19 +203,17 @@
                     isConnected = false;
                     statusEl.textContent = "Связь с сервером потеряна...";
                     statusEl.style.color = '#ff5555';
-                    exitGame(); // Возвращаем в меню при разрыве
+                    exitGame();
                 });
 
                 socket.on('onlineCount', (count) => {
                     onlineEl.textContent = `Online: ${count}`;
                 });
 
-                // Обновление списка комнат
                 socket.on('roomList', (rooms) => {
                     renderRoomList(rooms);
                 });
 
-                // Вход в игру (приходит от сервера после успешного входа в комнату)
                 socket.on('gameStart', (initialPlayers) => {
                     players = initialPlayers;
                     startGame();
@@ -222,14 +227,12 @@
                     alert('Ошибка от сервера: ' + msg);
                 });
 
-                // Отправка ввода
                 setInterval(() => {
                     if (isConnected && inGame) {
                         socket.emit('movement', keys);
                     }
                 }, 1000 / 60);
 
-                // Запуск отрисовки (она работает всегда, но рисует только если inGame)
                 requestAnimationFrame(renderLoop);
 
             } catch (e) {
@@ -239,15 +242,23 @@
 
         // --- ЛОГИКА ИНТЕРФЕЙСА ---
 
+        function getNickname() {
+            const nick = nicknameInput.value.trim() || "Player";
+            localStorage.setItem('playerNickname', nick);
+            return nick;
+        }
+
         function createRoom() {
             if (!isConnected) return alert("Нет соединения с сервером");
             const name = roomNameInput.value.trim();
-            socket.emit('createRoom', name);
+            const nickname = getNickname();
+            socket.emit('createRoom', name, nickname);
         }
 
         function joinRoom(roomId) {
             if (!isConnected) return alert("Нет соединения с сервером");
-            socket.emit('joinRoom', roomId);
+            const nickname = getNickname();
+            socket.emit('joinRoom', roomId, nickname);
         }
 
         function renderRoomList(rooms) {
@@ -311,6 +322,7 @@
                 const p = players[id];
                 const isMe = socket && id === socket.id;
                 
+                // Тело игрока
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, 20, 0, Math.PI * 2);
                 ctx.fillStyle = p.color;
@@ -320,12 +332,11 @@
                 ctx.strokeStyle = isMe ? '#fff' : '#000';
                 ctx.stroke();
 
-                if (isMe) {
-                    ctx.fillStyle = 'white';
-                    ctx.font = '12px sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.fillText("YOU", p.x, p.y - 25);
-                }
+                // Никнейм
+                ctx.fillStyle = isMe ? '#ffff55' : 'white';
+                ctx.font = isMe ? 'bold 14px sans-serif' : '12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(p.nickname, p.x, p.y - 30);
             }
 
             requestAnimationFrame(renderLoop);
