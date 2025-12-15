@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IO Game</title>
+    <title>LAN Game (Render)</title>
     <style>
         body {
             margin: 0;
-            background-color: #1a1a1a;
-            color: #eee;
+            padding: 0;
+            background-color: #111;
+            color: white;
             font-family: sans-serif;
             display: flex;
             flex-direction: column;
@@ -17,231 +18,142 @@
             height: 100vh;
             overflow: hidden;
         }
-
-        #gameContainer {
-            position: relative;
-        }
-
         canvas {
-            background-color: #2a2a2a;
-            border: 4px solid #444;
+            background-color: #222;
             box-shadow: 0 0 20px rgba(0,0,0,0.5);
-            border-radius: 4px;
+            border: 2px solid #444;
         }
-
-        /* Стили для меню входа */
-        #loginOverlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.85);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 100;
-        }
-
-        .login-box {
-            background: #333;
-            padding: 40px;
-            border-radius: 10px;
-            text-align: center;
-            box-shadow: 0 0 30px rgba(0,255,100,0.1);
-            border: 1px solid #555;
-        }
-
-        h2 { margin: 0 0 20px 0; color: #4ade80; }
-
-        input {
-            padding: 10px;
-            font-size: 16px;
-            border-radius: 5px;
-            border: 1px solid #666;
-            background: #222;
-            color: white;
-            text-align: center;
-            margin-bottom: 15px;
-            display: block;
-            width: 200px;
-        }
-
-        button {
-            padding: 10px 20px;
-            font-size: 16px;
-            background: #4ade80;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-            color: #000;
-            width: 100%;
-            transition: 0.2s;
-        }
-        button:hover { background: #22c55e; }
-
         #status {
-            margin-top: 10px;
-            color: #888;
-            font-size: 14px;
+            margin-top: 15px;
+            font-family: monospace;
+            color: #aaa;
         }
     </style>
-    
-    <!-- Подключаем socket.io через CDN для 100% надежности загрузки -->
-    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <!-- Используем CDN, так как это надежнее при запуске файла локально -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<link rel="stylesheet" href="/index.css">
 <script type="importmap">
 {
   "imports": {
-    "url": "https://esm.sh/url@^0.11.4",
-    "vite": "https://esm.sh/vite@^7.3.0",
-    "path": "https://esm.sh/path@^0.12.7"
+    "path": "https://esm.sh/path@^0.12.7",
+    "vite": "https://esm.sh/vite@^7.3.0"
   }
 }
 </script>
 </head>
 <body>
 
-    <div id="gameContainer">
-        <canvas id="gameCanvas" width="800" height="600"></canvas>
-        
-        <!-- Меню Входа -->
-        <div id="loginOverlay">
-            <div class="login-box">
-                <h2>IO GAME</h2>
-                <input type="text" id="nickname" placeholder="Твой никнейм" maxlength="10" autocomplete="off">
-                <button id="playBtn">ИГРАТЬ</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="status">Connecting...</div>
+    <h1 style="color: #4ade80;">Online IO Game</h1>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="status">Подключение к серверу...</div>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const loginOverlay = document.getElementById('loginOverlay');
-        const nicknameInput = document.getElementById('nickname');
-        const playBtn = document.getElementById('playBtn');
         const statusEl = document.getElementById('status');
-
-        let socket;
+        
+        // ВАЖНО: Прямое подключение к серверу Render
+        const SERVER_URL = 'https://rgp-game.onrender.com';
+        
+        let socket = null;
         let players = {};
-        let myId = null;
-        let isPlaying = false; // Флаг, играем мы или еще в меню
+        let isConnected = false;
 
         const keys = { up: false, down: false, left: false, right: false };
 
-        // Инициализация соединения
-        try {
-            // Подключаемся к текущему хосту
-            socket = io(); 
+        function init() {
+            try {
+                // Подключаемся к удаленному серверу
+                socket = io(SERVER_URL, {
+                    transports: ['websocket', 'polling'] // Пробуем все методы
+                });
 
-            socket.on('connect', () => {
-                statusEl.textContent = 'Connected. Enter name to play.';
-                statusEl.style.color = '#4ade80';
-                myId = socket.id;
-            });
+                socket.on('connect', () => {
+                    isConnected = true;
+                    statusEl.textContent = `Подключено к ${SERVER_URL} | ID: ${socket.id}`;
+                    statusEl.style.color = '#4ade80';
+                });
 
-            socket.on('disconnect', () => {
-                statusEl.textContent = 'Disconnected';
-                statusEl.style.color = 'red';
-                // Если потеряли связь, показываем меню снова
-                loginOverlay.style.display = 'flex';
-                isPlaying = false;
-            });
+                socket.on('disconnect', () => {
+                    isConnected = false;
+                    statusEl.textContent = "Связь с сервером потеряна...";
+                    statusEl.style.color = '#ff5555';
+                });
 
-            // Обновление состояния мира
-            socket.on('state', (serverPlayers) => {
-                players = serverPlayers;
-            });
+                socket.on('connect_error', (err) => {
+                    console.error("Connection Error:", err);
+                    statusEl.textContent = `Ошибка подключения: ${err.message}`;
+                    statusEl.style.color = 'orange';
+                });
 
-            socket.on('updatePlayers', (serverPlayers) => {
-                players = serverPlayers;
-            });
+                socket.on('updatePlayers', (serverPlayers) => {
+                    players = serverPlayers;
+                });
+                
+                socket.on('state', (serverPlayers) => {
+                    players = serverPlayers;
+                });
 
-        } catch (e) {
-            console.error("Socket error:", e);
-            statusEl.textContent = "Error loading socket.io";
+                // Отправка ввода
+                setInterval(() => {
+                    if (isConnected) {
+                        socket.emit('movement', keys);
+                    }
+                }, 1000 / 60);
+
+                // Запуск отрисовки
+                requestAnimationFrame(renderLoop);
+
+            } catch (e) {
+                statusEl.textContent = "Критическая ошибка JS: " + e.message;
+            }
         }
 
-        // Логика входа в игру
-        function joinGame() {
-            if (!socket || !socket.connected) {
-                alert("Нет соединения с сервером!");
-                return;
-            }
-
-            const name = nicknameInput.value.trim() || "Guest";
-            
-            // 1. Отправляем на сервер событие входа
-            socket.emit('joinGame', name);
-            
-            // 2. Скрываем меню
-            loginOverlay.style.display = 'none';
-            isPlaying = true;
-            
-            // 3. Фокус на игру
-            canvas.focus();
-        }
-
-        playBtn.addEventListener('click', joinGame);
-        nicknameInput.addEventListener('keydown', (e) => {
-            if(e.key === 'Enter') joinGame();
-        });
-
-        // Отправка управления (только если игрок нажал "Играть")
-        setInterval(() => {
-            if (isPlaying && socket) {
-                socket.emit('movement', keys);
-            }
-        }, 1000 / 60);
-
-        // Отрисовка
-        function draw() {
+        function renderLoop() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Сетка фона
+            // Сетка
             ctx.strokeStyle = '#333';
             ctx.lineWidth = 1;
             ctx.beginPath();
-            for(let x=0; x<=canvas.width; x+=50) { ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); }
-            for(let y=0; y<=canvas.height; y+=50) { ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); }
+            for (let x = 0; x <= canvas.width; x += 50) {
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+            }
+            for (let y = 0; y <= canvas.height; y += 50) {
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+            }
             ctx.stroke();
 
             // Игроки
             for (let id in players) {
                 const p = players[id];
+                const isMe = socket && id === socket.id;
                 
-                // Рисуем кружок
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, 20, 0, Math.PI * 2);
                 ctx.fillStyle = p.color;
                 ctx.fill();
-                
-                // Обводка (белая для меня, черная для других)
-                ctx.strokeStyle = (id === myId) ? '#fff' : '#000';
-                ctx.lineWidth = 2;
+
+                ctx.lineWidth = isMe ? 3 : 1;
+                ctx.strokeStyle = isMe ? '#fff' : '#000';
                 ctx.stroke();
 
-                // Никнейм
-                ctx.fillStyle = 'white';
-                ctx.font = '12px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText(p.name, p.x, p.y - 25);
+                if (isMe) {
+                    ctx.fillStyle = 'white';
+                    ctx.font = '12px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText("YOU", p.x, p.y - 25);
+                }
             }
 
-            requestAnimationFrame(draw);
+            requestAnimationFrame(renderLoop);
         }
 
-        // Запуск цикла отрисовки
-        draw();
-
-        // Обработка клавиш
+        // Управление
         window.addEventListener('keydown', (e) => {
-            if (document.activeElement === nicknameInput) return; // Не двигаться пока печатаем
-
+            if(e.repeat) return;
             if (e.code === 'KeyW' || e.code === 'ArrowUp') keys.up = true;
             if (e.code === 'KeyS' || e.code === 'ArrowDown') keys.down = true;
             if (e.code === 'KeyA' || e.code === 'ArrowLeft') keys.left = true;
@@ -255,6 +167,8 @@
             if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = false;
         });
 
+        init();
     </script>
+<script type="module" src="/index.tsx"></script>
 </body>
 </html>
