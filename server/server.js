@@ -1,17 +1,12 @@
 const express = require('express');
 const http = require('http');
-const { Server } = require("socket.io");
-const cors = require('cors');
+const { Server } = require('socket.io');
 const path = require('path');
 
 const app = express();
-app.use(cors());
-
-// Раздаем файлы клиента, если они лежат рядом (на всякий случай)
-app.use(express.static(path.join(__dirname, '../')));
-
 const server = http.createServer(app);
 
+// Настройка Socket.io с CORS, чтобы можно было подключаться с других доменов
 const io = new Server(server, {
   cors: {
     origin: "*", 
@@ -19,42 +14,60 @@ const io = new Server(server, {
   }
 });
 
-// === Хранилище игроков RPG ===
-let players = {};
+// ВАЖНО: Раздаем файлы из ТЕКУЩЕЙ папки (корня), а не из public
+app.use(express.static(__dirname));
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Хранилище состояния игроков
+const players = {};
+
+// Константы игры
+const SPEED = 5;
+const CANVAS_WIDTH = 800;
+const CANVAS_HEIGHT = 600;
+const PLAYER_RADIUS = 20;
 
 io.on('connection', (socket) => {
-  console.log('Новый RPG игрок:', socket.id);
+  console.log('New player connected:', socket.id);
 
-  // 1. Создаем игрока в случайном месте
+  // Создаем нового игрока
   players[socket.id] = {
-    x: Math.random() * 500,
-    y: Math.random() * 500,
-    color: `hsl(${Math.random() * 360}, 100%, 50%)`, // Случайный яркий цвет
+    x: Math.random() * (CANVAS_WIDTH - 100) + 50,
+    y: Math.random() * (CANVAS_HEIGHT - 100) + 50,
+    color: `hsl(${Math.random() * 360}, 70%, 50%)`,
     id: socket.id
   };
 
-  // 2. Отправляем всем текущий список
   io.emit('updatePlayers', players);
 
-  // 3. Слушаем движение
-  socket.on('move', (data) => {
-    if (players[socket.id]) {
-      players[socket.id].x = data.x;
-      players[socket.id].y = data.y;
-      // Рассылаем всем новые координаты
-      io.emit('updatePlayers', players);
+  socket.on('movement', (movement) => {
+    const player = players[socket.id];
+    if (player) {
+      if (movement.left) player.x -= SPEED;
+      if (movement.up) player.y -= SPEED;
+      if (movement.right) player.x += SPEED;
+      if (movement.down) player.y += SPEED;
+
+      player.x = Math.max(PLAYER_RADIUS, Math.min(CANVAS_WIDTH - PLAYER_RADIUS, player.x));
+      player.y = Math.max(PLAYER_RADIUS, Math.min(CANVAS_HEIGHT - PLAYER_RADIUS, player.y));
     }
   });
 
-  // 4. Удаляем ушедших
   socket.on('disconnect', () => {
-    console.log('Игрок вышел:', socket.id);
+    console.log('Player disconnected:', socket.id);
     delete players[socket.id];
     io.emit('updatePlayers', players);
   });
 });
 
+setInterval(() => {
+  io.emit('state', players);
+}, 1000 / 60);
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`RPG Server запущен на порту ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
