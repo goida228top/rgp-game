@@ -10,7 +10,7 @@
             padding: 0;
             background-color: #111;
             color: white;
-            font-family: sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -18,90 +18,218 @@
             height: 100vh;
             overflow: hidden;
         }
+        
+        /* Стили игры */
         canvas {
             background-color: #222;
             box-shadow: 0 0 20px rgba(0,0,0,0.5);
             border: 2px solid #444;
+            display: none; /* Скрыто по умолчанию */
         }
-        #status {
-            margin-top: 15px;
+
+        /* Стили меню */
+        #menu-screen {
+            background: #1a1a1a;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            width: 400px;
+            text-align: center;
+            border: 1px solid #333;
+        }
+
+        h1 { margin: 0 0 1rem 0; color: #4ade80; }
+        h2 { font-size: 1.2rem; color: #ccc; margin-top: 1.5rem; }
+
+        .btn {
+            background: #4ade80;
+            color: #111;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+            font-size: 1rem;
+            width: 100%;
+            margin-top: 10px;
+        }
+        .btn:hover { background: #22c55e; }
+        .btn-secondary { background: #333; color: white; }
+        .btn-secondary:hover { background: #444; }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            border-radius: 6px;
+            border: 1px solid #444;
+            background: #222;
+            color: white;
+            margin-bottom: 10px;
+        }
+
+        #room-list {
+            list-style: none;
+            padding: 0;
+            margin: 10px 0;
+            max-height: 200px;
+            overflow-y: auto;
+            text-align: left;
+        }
+
+        .room-item {
+            background: #252525;
+            padding: 10px;
+            margin-bottom: 5px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            border: 1px solid transparent;
+        }
+        .room-item:hover {
+            border-color: #4ade80;
+            background: #333;
+        }
+        .room-info { font-size: 0.9rem; }
+        .room-count { color: #888; font-size: 0.8rem; }
+
+        #status-bar {
+            position: absolute;
+            bottom: 10px;
             font-family: monospace;
-            color: #aaa;
+            color: #666;
+            font-size: 0.8rem;
+        }
+        
+        #online-counter {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.5);
+            padding: 5px 10px;
+            border-radius: 20px;
+            color: #4ade80;
+            font-weight: bold;
         }
     </style>
-    <!-- Используем CDN, так как это надежнее при запуске файла локально -->
+    <!-- Используем CDN -->
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <link rel="stylesheet" href="/index.css">
 <script type="importmap">
 {
   "imports": {
     "path": "https://esm.sh/path@^0.12.7",
-    "vite": "https://esm.sh/vite@^7.3.0"
+    "vite": "https://esm.sh/vite@^7.3.0",
+    "url": "https://esm.sh/url@^0.11.4"
   }
 }
 </script>
 </head>
 <body>
 
-    <h1 style="color: #4ade80;">Online IO Game</h1>
+    <div id="online-counter">Online: 0</div>
+
+    <!-- МЕНЮ -->
+    <div id="menu-screen">
+        <h1>Online IO Game</h1>
+        
+        <input type="text" id="roomNameInput" placeholder="Название комнаты (необязательно)">
+        <button class="btn" onclick="createRoom()">Создать комнату</button>
+
+        <h2>Доступные комнаты</h2>
+        <div id="room-list">
+            <div style="color: #666; padding: 10px;">Загрузка списка...</div>
+        </div>
+    </div>
+
+    <!-- ИГРА -->
     <canvas id="gameCanvas" width="800" height="600"></canvas>
-    <div id="status">Подключение к серверу...</div>
+
+    <div id="status-bar">Подключение к серверу...</div>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const statusEl = document.getElementById('status');
+        const statusEl = document.getElementById('status-bar');
+        const menuScreen = document.getElementById('menu-screen');
+        const roomListEl = document.getElementById('room-list');
+        const onlineEl = document.getElementById('online-counter');
+        const roomNameInput = document.getElementById('roomNameInput');
         
-        // ВАЖНО: Прямое подключение к серверу Render
-        const SERVER_URL = 'https://rgp-game.onrender.com';
+        // Автоматическое определение сервера
+        // Если мы локально, подключаемся к localhost:3000
+        // Если сайт загружен с удаленного хоста, используем Render
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const SERVER_URL = isLocal ? 'http://localhost:3000' : 'https://rgp-game.onrender.com';
         
         let socket = null;
         let players = {};
         let isConnected = false;
+        let inGame = false;
 
         const keys = { up: false, down: false, left: false, right: false };
 
         function init() {
             try {
-                // Подключаемся к удаленному серверу
+                // Подключаемся к серверу
+                console.log('Connecting to:', SERVER_URL);
                 socket = io(SERVER_URL, {
-                    transports: ['websocket', 'polling'] // Пробуем все методы
+                    transports: ['websocket', 'polling']
                 });
 
                 socket.on('connect', () => {
                     isConnected = true;
-                    statusEl.textContent = `Подключено к ${SERVER_URL} | ID: ${socket.id}`;
+                    statusEl.textContent = `Сервер: ${SERVER_URL} | ID: ${socket.id}`;
                     statusEl.style.color = '#4ade80';
+                });
+
+                socket.on('connect_error', (err) => {
+                    console.error('Connection error:', err);
+                    statusEl.textContent = "Ошибка подключения: " + err.message;
+                    statusEl.style.color = '#ff5555';
                 });
 
                 socket.on('disconnect', () => {
                     isConnected = false;
                     statusEl.textContent = "Связь с сервером потеряна...";
                     statusEl.style.color = '#ff5555';
+                    exitGame(); // Возвращаем в меню при разрыве
                 });
 
-                socket.on('connect_error', (err) => {
-                    console.error("Connection Error:", err);
-                    statusEl.textContent = `Ошибка подключения: ${err.message}`;
-                    statusEl.style.color = 'orange';
+                socket.on('onlineCount', (count) => {
+                    onlineEl.textContent = `Online: ${count}`;
                 });
 
-                socket.on('updatePlayers', (serverPlayers) => {
-                    players = serverPlayers;
+                // Обновление списка комнат
+                socket.on('roomList', (rooms) => {
+                    renderRoomList(rooms);
+                });
+
+                // Вход в игру (приходит от сервера после успешного входа в комнату)
+                socket.on('gameStart', (initialPlayers) => {
+                    players = initialPlayers;
+                    startGame();
                 });
                 
                 socket.on('state', (serverPlayers) => {
                     players = serverPlayers;
                 });
 
+                socket.on('error', (msg) => {
+                    alert('Ошибка от сервера: ' + msg);
+                });
+
                 // Отправка ввода
                 setInterval(() => {
-                    if (isConnected) {
+                    if (isConnected && inGame) {
                         socket.emit('movement', keys);
                     }
                 }, 1000 / 60);
 
-                // Запуск отрисовки
+                // Запуск отрисовки (она работает всегда, но рисует только если inGame)
                 requestAnimationFrame(renderLoop);
 
             } catch (e) {
@@ -109,7 +237,59 @@
             }
         }
 
+        // --- ЛОГИКА ИНТЕРФЕЙСА ---
+
+        function createRoom() {
+            if (!isConnected) return alert("Нет соединения с сервером");
+            const name = roomNameInput.value.trim();
+            socket.emit('createRoom', name);
+        }
+
+        function joinRoom(roomId) {
+            if (!isConnected) return alert("Нет соединения с сервером");
+            socket.emit('joinRoom', roomId);
+        }
+
+        function renderRoomList(rooms) {
+            roomListEl.innerHTML = '';
+            if (rooms.length === 0) {
+                roomListEl.innerHTML = '<div style="color: #666; padding: 10px;">Нет активных комнат</div>';
+                return;
+            }
+
+            rooms.forEach(room => {
+                const div = document.createElement('div');
+                div.className = 'room-item';
+                div.innerHTML = `
+                    <span class="room-info">${room.name}</span>
+                    <span class="room-count">Игроков: ${room.players}</span>
+                `;
+                div.onclick = () => joinRoom(room.id);
+                roomListEl.appendChild(div);
+            });
+        }
+
+        function startGame() {
+            inGame = true;
+            menuScreen.style.display = 'none';
+            canvas.style.display = 'block';
+            canvas.focus();
+        }
+
+        function exitGame() {
+            inGame = false;
+            menuScreen.style.display = 'block';
+            canvas.style.display = 'none';
+        }
+
+        // --- ИГРОВОЙ ЦИКЛ ---
+
         function renderLoop() {
+            if (!inGame) {
+                requestAnimationFrame(renderLoop);
+                return;
+            }
+
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             // Сетка
@@ -153,6 +333,7 @@
 
         // Управление
         window.addEventListener('keydown', (e) => {
+            if (!inGame) return;
             if(e.repeat) return;
             if (e.code === 'KeyW' || e.code === 'ArrowUp') keys.up = true;
             if (e.code === 'KeyS' || e.code === 'ArrowDown') keys.down = true;
