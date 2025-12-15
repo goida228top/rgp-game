@@ -9,9 +9,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "path": "^0.12.7",
+    "url": "^0.11.4",
     "vite": "^7.3.0",
-    "url": "^0.11.4"
+    "path": "^0.12.7"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
