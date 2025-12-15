@@ -2,67 +2,79 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Битва Кликов 2.0</title>
-    <link rel="stylesheet" href="style.css">
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Socket.IO Библиотека -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RPG Online</title>
+    
+    <!-- Подключаем Socket.IO -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-    <!-- Твой скрипт клиента -->
-    <script src="client.js" defer></script>
-</head>
-<body class="bg-slate-900 text-white min-h-screen flex flex-col items-center justify-center overflow-hidden transition-colors duration-700 select-none" id="main-body">
-    
-    <!-- Индикатор статуса -->
-    <div class="absolute top-4 right-4 flex items-center gap-2 bg-slate-800/50 px-3 py-1 rounded-full backdrop-blur-sm z-50">
-        <div id="status-dot" class="w-2.5 h-2.5 rounded-full bg-red-500 transition-colors duration-300"></div>
-        <span id="status-text" class="text-xs font-mono font-bold text-slate-300">CONNECTING...</span>
-    </div>
 
-    <!-- Заголовок -->
-    <div class="z-20 text-center mb-4 md:mb-8 relative pointer-events-none">
-        <h1 class="text-4xl md:text-7xl font-black tracking-tighter drop-shadow-2xl flex items-center justify-center gap-4">
-            <span class="text-red-500">RED</span> 
-            <span class="text-slate-600 text-2xl md:text-4xl">vs</span>
-            <span class="text-blue-500">BLUE</span>
-        </h1>
-    </div>
+    <!-- !!! СТИЛИ ПИШЕМ ПРЯМО ТУТ !!! -->
+    <!-- Так они 100% загрузятся и экран будет зеленым -->
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden; /* Убираем прокрутку */
+            background-color: #4a8522; /* <--- ВОТ ОН, ЗЕЛЕНЫЙ ЦВЕТ */
+            font-family: 'Courier New', monospace;
+        }
 
-    <!-- Игровое поле -->
-    <div class="relative w-full max-w-6xl flex flex-col md:flex-row gap-6 md:gap-12 px-4 z-10 items-center justify-center h-[70vh] md:h-auto">
+        /* Красивое меню */
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(5px);
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            pointer-events: none; /* Чтобы мышь проходила сквозь меню */
+            user-select: none;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        h1 { 
+            margin: 0 0 10px 0; 
+            font-size: 28px; 
+            color: #ffd700; 
+            text-shadow: 2px 2px 0px #000;
+        }
         
-        <!-- Красная команда -->
-        <div class="flex-1 w-full flex flex-col items-center group relative">
-            <div class="text-6xl md:text-9xl font-black mb-4 tabular-nums text-red-100 drop-shadow-lg transition-transform" id="score-red">0</div>
-            <button id="btn-red" class="w-full h-full min-h-[160px] md:aspect-square md:h-80 rounded-3xl bg-gradient-to-br from-red-600 to-red-800 hover:from-red-500 hover:to-red-700 active:scale-95 shadow-[0_8px_0_rgb(80,0,0)] active:shadow-none active:translate-y-[8px] transition-all flex items-center justify-center border-b-8 border-red-900 overflow-hidden relative">
-                <span class="text-4xl md:text-6xl font-black transform -rotate-2 pointer-events-none drop-shadow-md">CLICK!</span>
-            </button>
-        </div>
+        #status { 
+            font-weight: bold; 
+            font-size: 14px;
+            margin-bottom: 5px; 
+        }
 
-        <!-- Кнопка сброса -->
-        <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 md:relative md:top-auto md:left-auto md:transform-none md:mt-24 z-20">
-            <button id="btn-reset" class="bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white p-4 rounded-full transition-all shadow-lg hover:shadow-xl border border-slate-700 active:scale-90 group">
-                RESTART
-            </button>
-        </div>
+        #coords {
+            color: #ccc;
+            font-size: 12px;
+        }
 
-        <!-- Синяя команда -->
-        <div class="flex-1 w-full flex flex-col items-center group relative">
-            <div class="text-6xl md:text-9xl font-black mb-4 tabular-nums text-blue-100 drop-shadow-lg transition-transform" id="score-blue">0</div>
-            <button id="btn-blue" class="w-full h-full min-h-[160px] md:aspect-square md:h-80 rounded-3xl bg-gradient-to-br from-blue-600 to-blue-800 hover:from-blue-500 hover:to-blue-700 active:scale-95 shadow-[0_8px_0_rgb(0,0,80)] active:shadow-none active:translate-y-[8px] transition-all flex items-center justify-center border-b-8 border-blue-900 overflow-hidden relative">
-                <span class="text-4xl md:text-6xl font-black transform rotate-2 pointer-events-none drop-shadow-md">CLICK!</span>
-            </button>
-        </div>
+        canvas {
+            display: block;
+            /* На всякий случай красим и сам холст */
+            background-color: #4a8522; 
+        }
+    </style>
 
+    <!-- Подключаем твой файл с логикой (ОТДЕЛЬНО!) -->
+    <!-- defer обязателен, чтобы не было ошибок -->
+    <script src="game.js" defer></script>
+</head>
+<body>
+
+    <!-- Интерфейс -->
+    <div id="ui">
+        <h1>⚔️ RPG WORLD</h1>
+        <div id="status">Connecting...</div>
+        <div id="coords">X: 0 Y: 0</div>
+        <p style="margin-top: 10px; font-size: 12px; opacity: 0.7;">WASD / Стрелки - Ходить</p>
     </div>
 
-    <!-- Контейнер для эффектов -->
-    <div id="effects-container" class="absolute inset-0 pointer-events-none overflow-hidden z-50"></div>
-    
-    <!-- КОНСОЛЬ ОТЛАДКИ (Видна на экране) -->
-    <div id="debug-console" class="fixed bottom-0 left-0 w-full h-32 bg-black/90 text-green-500 font-mono text-[10px] md:text-xs p-2 overflow-y-auto z-[100] border-t border-green-900 opacity-90 pointer-events-none">
-        <div>> System init...</div>
-    </div>
+    <!-- Холст игры -->
+    <canvas id="gameCanvas"></canvas>
+
 </body>
 </html>

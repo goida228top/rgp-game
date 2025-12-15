@@ -1,48 +1,60 @@
 const express = require('express');
 const http = require('http');
-const { Server } = require('socket.io');
+const { Server } = require("socket.io");
+const cors = require('cors');
 const path = require('path');
 
 const app = express();
+app.use(cors());
+
+// Раздаем файлы клиента, если они лежат рядом (на всякий случай)
+app.use(express.static(path.join(__dirname, '../')));
+
 const server = http.createServer(app);
+
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: "*", 
     methods: ["GET", "POST"]
   }
 });
 
-// ИСПРАВЛЕНИЕ ПУТИ:
-// Мы используем path.join(__dirname, '../'), чтобы сервер раздавал файлы
-// из папки на уровень выше (из корня), где лежит index.html.
-app.use(express.static(path.join(__dirname, '../')));
-
-let scores = {
-  red: 0,
-  blue: 0
-};
+// === Хранилище игроков RPG ===
+let players = {};
 
 io.on('connection', (socket) => {
-  // Отправляем текущее состояние при подключении
-  socket.emit('updateScores', scores);
+  console.log('Новый RPG игрок:', socket.id);
 
-  socket.on('click', (team) => {
-    if (scores[team] !== undefined) {
-      scores[team]++;
-      // broadcast: отправляем всем, включая отправителя
-      io.emit('updateScores', scores);
-      io.emit('clickEffect', { team });
+  // 1. Создаем игрока в случайном месте
+  players[socket.id] = {
+    x: Math.random() * 500,
+    y: Math.random() * 500,
+    color: `hsl(${Math.random() * 360}, 100%, 50%)`, // Случайный яркий цвет
+    id: socket.id
+  };
+
+  // 2. Отправляем всем текущий список
+  io.emit('updatePlayers', players);
+
+  // 3. Слушаем движение
+  socket.on('move', (data) => {
+    if (players[socket.id]) {
+      players[socket.id].x = data.x;
+      players[socket.id].y = data.y;
+      // Рассылаем всем новые координаты
+      io.emit('updatePlayers', players);
     }
   });
 
-  socket.on('reset', () => {
-    scores = { red: 0, blue: 0 };
-    io.emit('updateScores', scores);
-    io.emit('resetEffect');
+  // 4. Удаляем ушедших
+  socket.on('disconnect', () => {
+    console.log('Игрок вышел:', socket.id);
+    delete players[socket.id];
+    io.emit('updatePlayers', players);
   });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`Сервер запущен на порту ${PORT}`);
+  console.log(`RPG Server запущен на порту ${PORT}`);
 });
