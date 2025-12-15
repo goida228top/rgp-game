@@ -6,7 +6,7 @@ const path = require('path');
 const app = express();
 const server = http.createServer(app);
 
-// Настройка Socket.io с CORS, чтобы можно было подключаться с других доменов
+// Настройка Socket.io с CORS
 const io = new Server(server, {
   cors: {
     origin: "*", 
@@ -14,7 +14,7 @@ const io = new Server(server, {
   }
 });
 
-// ВАЖНО: Раздаем файлы из ТЕКУЩЕЙ папки (корня), а не из public
+// Раздаем файлы из текущей папки
 app.use(express.static(__dirname));
 
 app.get('/', (req, res) => {
@@ -31,17 +31,23 @@ const CANVAS_HEIGHT = 600;
 const PLAYER_RADIUS = 20;
 
 io.on('connection', (socket) => {
-  console.log('New player connected:', socket.id);
+  console.log('New connection:', socket.id);
 
-  // Создаем нового игрока
-  players[socket.id] = {
-    x: Math.random() * (CANVAS_WIDTH - 100) + 50,
-    y: Math.random() * (CANVAS_HEIGHT - 100) + 50,
-    color: `hsl(${Math.random() * 360}, 70%, 50%)`,
-    id: socket.id
-  };
-
-  io.emit('updatePlayers', players);
+  // Теперь мы НЕ создаем игрока сразу. Ждем события joinGame.
+  
+  socket.on('joinGame', (playerName) => {
+    // Создаем игрока только когда он нажал "Играть"
+    players[socket.id] = {
+      x: Math.random() * (CANVAS_WIDTH - 100) + 50,
+      y: Math.random() * (CANVAS_HEIGHT - 100) + 50,
+      color: `hsl(${Math.random() * 360}, 70%, 50%)`,
+      id: socket.id,
+      name: playerName || `Player ${socket.id.substr(0,4)}` // Имя или дефолтное
+    };
+    
+    // Сообщаем всем (включая нового), что список обновился
+    io.emit('updatePlayers', players);
+  });
 
   socket.on('movement', (movement) => {
     const player = players[socket.id];
@@ -57,9 +63,11 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    console.log('Player disconnected:', socket.id);
-    delete players[socket.id];
-    io.emit('updatePlayers', players);
+    console.log('Disconnected:', socket.id);
+    if (players[socket.id]) {
+      delete players[socket.id];
+      io.emit('updatePlayers', players);
+    }
   });
 });
 

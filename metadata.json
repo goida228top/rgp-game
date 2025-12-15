@@ -1,5 +1,5 @@
 {
-  "name": "Битва Кликов",
-  "description": "Многопользовательская игра на Node.js и Socket.io",
+  "name": "Online RGP game",
+  "description": "крутая рпг игра",
   "requestFramePermissions": []
 }
