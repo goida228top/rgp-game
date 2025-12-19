@@ -1,9 +1,8 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  base: './', // Относительные пути для GitHub Pages
+  base: './', // Относительные пути для правильной работы на GitHub Pages
   build: {
-    outDir: 'dist', // Куда складывать готовую игру
     emptyOutDir: true, // Очищать папку перед сборкой
   },
   server: {
