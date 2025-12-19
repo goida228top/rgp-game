@@ -14,12 +14,11 @@ const io = new Server(server, {
   }
 });
 
-// ВАЖНО: Раздаем файлы из папки сборки (dist), а не исходники
-app.use(express.static(path.join(__dirname, '../dist')));
+// Раздаем файлы из корневой директории (поднимаемся на уровень выше от server/)
+app.use(express.static(path.join(__dirname, '../')));
 
 app.get('/', (req, res) => {
-  // Отправляем index.html из папки сборки
-  res.sendFile(path.join(__dirname, '../dist/index.html'));
+  res.sendFile(path.join(__dirname, '../index.html'));
 });
 
 // Глобальные переменные
@@ -87,6 +86,10 @@ io.on('connection', (socket) => {
       if (movement.up) player.y -= SPEED;
       if (movement.right) player.x += SPEED;
       if (movement.down) player.y += SPEED;
+
+      // Ограничения мира сервера остаются простыми, коллизии с объектами - на клиенте
+      // player.x = Math.max(PLAYER_RADIUS, Math.min(CANVAS_WIDTH - PLAYER_RADIUS, player.x));
+      // player.y = Math.max(PLAYER_RADIUS, Math.min(CANVAS_HEIGHT - PLAYER_RADIUS, player.y));
     }
   });
 

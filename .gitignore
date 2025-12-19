@@ -1,15 +1,24 @@
-# Зависимости
-node_modules
-server/node_modules
-
-# Логи и временные файлы
+# Logs
+logs
 *.log
-.DS_Store
-.env
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Настройки редакторов
-.vscode/
-.idea/
-
-# Папка сборки (dist) - игнорируем, так как это результат компиляции
+node_modules
 dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
