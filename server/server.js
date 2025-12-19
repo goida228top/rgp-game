@@ -87,8 +87,9 @@ io.on('connection', (socket) => {
       if (movement.right) player.x += SPEED;
       if (movement.down) player.y += SPEED;
 
-      player.x = Math.max(PLAYER_RADIUS, Math.min(CANVAS_WIDTH - PLAYER_RADIUS, player.x));
-      player.y = Math.max(PLAYER_RADIUS, Math.min(CANVAS_HEIGHT - PLAYER_RADIUS, player.y));
+      // Ограничения мира сервера остаются простыми, коллизии с объектами - на клиенте
+      // player.x = Math.max(PLAYER_RADIUS, Math.min(CANVAS_WIDTH - PLAYER_RADIUS, player.x));
+      // player.y = Math.max(PLAYER_RADIUS, Math.min(CANVAS_HEIGHT - PLAYER_RADIUS, player.y));
     }
   });
 
@@ -122,7 +123,8 @@ function joinRoom(socket, roomId, nickname) {
     y: Math.random() * (CANVAS_HEIGHT - 100) + 50,
     color: `hsl(${Math.random() * 360}, 70%, 50%)`,
     id: socket.id,
-    nickname: nickname || "Player"
+    nickname: nickname || "Player",
+    inventory: { stone: 0, wood: 0 } // Добавляем инвентарь
   };
 
   // Сообщаем клиенту, что игра началась

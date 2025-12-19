@@ -1,37 +1,20 @@
-# Инструкция по запуску LAN игры
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+</div>
 
-## 1. Установка
+# Run and deploy your AI Studio app
 
-Откройте терминал в папке с проектом и выполните команды:
+This contains everything you need to run your app locally.
 
-```bash
-# Инициализация проекта (создаст package.json, если его нет, но я его уже создал)
-npm install
+View your app in AI Studio: https://ai.studio/apps/drive/1YpJMTUNBK0CQI9FZNUjZgHMvB_aH5aEl
 
-# Если вы создаете файлы вручную, выполните:
-# npm init -y
-# npm install express socket.io
-```
+## Run Locally
 
-## 2. Запуск сервера
+**Prerequisites:**  Node.js
 
-```bash
-node server.js
-```
 
-Вы увидите сообщение: `Server running on port 3000`.
-
-## 3. Как играть
-
-### На этом же компьютере:
-Откройте браузер и перейдите по адресу: `http://localhost:3000`
-
-### По локальной сети (LAN):
-1.  Узнайте локальный IP-адрес компьютера, где запущен сервер:
-    *   **Windows:** В командной строке введите `ipconfig`. Ищите IPv4-адрес (обычно начинается на `192.168.x.x`).
-    *   **macOS / Linux:** В терминале введите `ifconfig` или `ip a`.
-2.  На другом устройстве (телефон, ноутбук), подключенном к тому же Wi-Fi:
-    *   Откройте браузер.
-    *   Введите адрес: `http://ВАШ_IP_АДРЕС:3000` (например: `http://192.168.1.5:3000`).
-
-Приятной игры!
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Run the app:
+   `npm run dev`

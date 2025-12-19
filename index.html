@@ -3,363 +3,181 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LAN Game (Render)</title>
+    <title>Terra Wilds</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
+        /* Темный фон с тонкой сеткой */
         body {
-            margin: 0;
-            padding: 0;
-            background-color: #111;
-            color: white;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            overflow: hidden;
+            background-color: #020617; /* slate-950 */
+            background-image: 
+                linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
         }
-        
-        /* Стили игры */
+
         canvas {
-            background-color: #222;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
-            border: 2px solid #444;
-            display: none; /* Скрыто по умолчанию */
+            display: block;
         }
 
-        /* Стили меню */
-        #menu-screen {
-            background: #1a1a1a;
-            padding: 2rem;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            width: 400px;
-            text-align: center;
-            border: 1px solid #333;
-        }
+        /* Темный скроллбар */
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
 
-        h1 { margin: 0 0 1rem 0; color: #4ade80; }
-        h2 { font-size: 1.2rem; color: #ccc; margin-top: 1.5rem; }
-
-        .btn {
-            background: #4ade80;
-            color: #111;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: 0.2s;
-            font-size: 1rem;
-            width: 100%;
-            margin-top: 10px;
+        .mc-slot {
+            transition: transform 0.1s, border-color 0.1s;
         }
-        .btn:hover { background: #22c55e; }
-        .btn-secondary { background: #333; color: white; }
-        .btn-secondary:hover { background: #444; }
-
-        input[type="text"] {
-            width: 100%;
-            padding: 10px;
-            box-sizing: border-box;
-            border-radius: 6px;
-            border: 1px solid #444;
-            background: #222;
-            color: white;
-            margin-bottom: 10px;
-        }
-
-        #room-list {
-            list-style: none;
-            padding: 0;
-            margin: 10px 0;
-            max-height: 200px;
-            overflow-y: auto;
-            text-align: left;
-        }
-
-        .room-item {
-            background: #252525;
-            padding: 10px;
-            margin-bottom: 5px;
-            border-radius: 4px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            cursor: pointer;
-            border: 1px solid transparent;
-        }
-        .room-item:hover {
-            border-color: #4ade80;
-            background: #333;
-        }
-        .room-info { font-size: 0.9rem; }
-        .room-count { color: #888; font-size: 0.8rem; }
-
-        #status-bar {
-            position: absolute;
-            bottom: 10px;
-            font-family: monospace;
-            color: #666;
-            font-size: 0.8rem;
+        .mc-slot:hover {
+            transform: scale(1.05);
+            border-color: #fbbf24;
         }
         
-        #online-counter {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: rgba(0,0,0,0.5);
-            padding: 5px 10px;
-            border-radius: 20px;
-            color: #4ade80;
-            font-weight: bold;
+        /* Анимация появления */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
         }
     </style>
-    <!-- Используем CDN -->
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-<link rel="stylesheet" href="/index.css">
 <script type="importmap">
 {
   "imports": {
-    "path": "https://esm.sh/path@^0.12.7",
-    "vite": "https://esm.sh/vite@^7.3.0",
-    "url": "https://esm.sh/url@^0.11.4"
+    "vite": "https://esm.sh/vite@^7.3.0"
   }
 }
 </script>
 </head>
-<body>
+<body class="h-screen w-screen overflow-hidden flex flex-col items-center justify-center font-sans text-slate-200 selection:bg-emerald-500 selection:text-white">
 
-    <div id="online-counter">Online: 0</div>
+    <!-- ЗАГЛУШКА ДЛЯ МОБИЛЬНЫХ -->
+    <div class="fixed inset-0 z-[100] bg-slate-950 flex flex-col items-center justify-center p-8 text-center md:hidden">
+        <h1 class="text-4xl font-black text-red-600 mb-4">TERRA <span class="text-emerald-500">WILDS</span></h1>
+        <p class="text-xl text-slate-300 mb-6">Эта игра разработана только для компьютеров.</p>
+        <p class="text-slate-500 text-sm">Пожалуйста, откройте игру на ПК или ноутбуке для наилучшего опыта.</p>
+        <div class="mt-8 text-6xl">💻</div>
+    </div>
 
-    <!-- МЕНЮ -->
-    <div id="menu-screen">
-        <h1>Online IO Game</h1>
+    <!-- ГЛАВНОЕ МЕНЮ (Start Screen) -->
+    <div id="start-screen" class="flex flex-col items-center gap-8 z-10 animate-fade-in">
+        <!-- Логотип -->
+        <div class="text-center">
+            <!-- TERRA - Красный (red-600), WILDS - Изумрудный (emerald-500) -->
+            <h1 class="text-7xl font-black text-red-600 tracking-tighter drop-shadow-[0_0_25px_rgba(220,38,38,0.4)] mb-2">
+                TERRA <span class="text-emerald-500 drop-shadow-[0_0_25px_rgba(16,185,129,0.4)]">WILDS</span>
+            </h1>
+            <p class="text-slate-500 text-lg font-medium tracking-widest uppercase">Explore. Gather. Survive.</p>
+        </div>
         
-        <input type="text" id="nicknameInput" placeholder="Ваш никнейм" maxlength="15">
-        
-        <div style="border-top: 1px solid #333; margin: 15px 0;"></div>
-
-        <input type="text" id="roomNameInput" placeholder="Название комнаты (необязательно)">
-        <button class="btn" onclick="createRoom()">Создать комнату</button>
-
-        <h2>Доступные комнаты</h2>
-        <div id="room-list">
-            <div style="color: #666; padding: 10px;">Загрузка списка...</div>
+        <div class="flex flex-col gap-4 w-72">
+            <!-- ОНЛАЙН (Синий) -->
+            <button id="btn-online" class="group relative bg-blue-600 hover:bg-blue-500 text-white text-xl font-bold py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(37,99,235,0.3)] transition-all transform hover:-translate-y-1 active:scale-95 overflow-hidden">
+                <div class="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-[shimmer_1s_infinite]"></div>
+                ОНЛАЙН
+            </button>
+            
+            <!-- ОФФЛАЙН (Зеленый) -->
+            <button id="btn-offline" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xl font-bold py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all transform hover:-translate-y-1 active:scale-95">
+                ОФФЛАЙН
+            </button>
+            
+            <!-- НАСТРОЙКИ (Серый) -->
+            <button id="btn-settings" class="bg-slate-700 hover:bg-slate-600 text-slate-200 text-lg font-bold py-3 px-8 rounded-xl border border-slate-600 hover:border-slate-500 shadow-lg transition-all transform hover:-translate-y-1 active:scale-95">
+                НАСТРОЙКИ
+            </button>
         </div>
     </div>
 
-    <!-- ИГРА -->
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
-
-    <div id="status-bar">Подключение к серверу...</div>
-
-    <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const statusEl = document.getElementById('status-bar');
-        const menuScreen = document.getElementById('menu-screen');
-        const roomListEl = document.getElementById('room-list');
-        const onlineEl = document.getElementById('online-counter');
-        const roomNameInput = document.getElementById('roomNameInput');
-        const nicknameInput = document.getElementById('nicknameInput');
+    <!-- МЕНЮ ОНЛАЙНА (Lobby) -->
+    <div id="online-menu" class="hidden w-full max-w-5xl p-8 bg-slate-900/95 backdrop-blur-md rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-slate-800 z-10 relative animate-fade-in">
         
-        // Автоматическое определение сервера
-        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        const SERVER_URL = isLocal ? 'http://localhost:3000' : 'https://rgp-game.onrender.com';
+        <!-- Верхняя панель -->
+        <div class="flex justify-between items-center mb-8 border-b border-slate-800 pb-6">
+            <button id="btn-back-menu" class="text-slate-400 hover:text-white font-bold transition flex items-center gap-2">
+                <span class="text-xl">←</span> Назад
+            </button>
+            <h2 class="text-3xl font-black text-slate-100 tracking-tight">СЕТЕВАЯ ИГРА</h2>
+            <div class="font-mono text-sm bg-slate-800 text-emerald-400 px-4 py-2 rounded-full border border-slate-700 flex items-center gap-2">
+                <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                Online: <span id="online-count">...</span>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- Левая колонка: Создание -->
+            <div class="bg-slate-800/50 p-6 rounded-2xl border border-slate-700/50">
+                <h3 class="text-xl font-bold mb-4 text-emerald-400 flex items-center gap-2">
+                    1. Ваш Профиль
+                </h3>
+                <div class="mb-8">
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-wider">Никнейм</label>
+                    <input type="text" id="nickname-input" placeholder="Введите имя героя..." class="w-full p-4 bg-slate-900 rounded-xl border border-slate-700 text-white placeholder-slate-600 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none text-lg font-bold transition">
+                </div>
+
+                <h3 class="text-xl font-bold mb-4 text-blue-400 flex items-center gap-2">
+                    2. Создать мир
+                </h3>
+                <div class="flex gap-2">
+                    <input type="text" id="room-name-input" placeholder="Название комнаты..." class="flex-grow p-4 bg-slate-900 rounded-xl border border-slate-700 text-white placeholder-slate-600 focus:border-blue-500 focus:outline-none transition">
+                    <button id="create-room-button" disabled class="bg-blue-600 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed hover:bg-blue-500 text-white font-bold px-6 rounded-xl transition shadow-lg">
+                        +
+                    </button>
+                </div>
+            </div>
+
+            <!-- Правая колонка: Список комнат -->
+            <div class="bg-slate-800/50 p-6 rounded-2xl border border-slate-700/50 flex flex-col h-[400px]">
+                <h3 class="text-xl font-bold mb-4 text-slate-200 flex justify-between items-center">
+                    Список миров
+                    <span class="text-xs font-normal text-slate-500 bg-slate-900 px-2 py-1 rounded">LIVE</span>
+                </h3>
+                <div id="room-list-container" class="flex-grow custom-scroll overflow-y-auto space-y-2 pr-2">
+                    <p id="no-rooms-message" class="text-slate-500 text-center mt-20 italic">
+                        Миров пока нет.<br>Будьте первым!
+                    </p>
+                    <!-- Комнаты -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ИГРОВОЙ КОНТЕЙНЕР -->
+    <div id="game-container" class="hidden fixed inset-0 z-50 bg-black">
+        <canvas id="game-canvas"></canvas>
         
-        let socket = null;
-        let players = {};
-        let isConnected = false;
-        let inGame = false;
+        <!-- ИНВЕНТАРЬ (Minecraft Style) -->
+        <div id="inventory-ui" class="absolute bottom-6 left-1/2 transform -translate-x-1/2 flex gap-2 p-2 bg-[#c6c6c6] rounded-sm border-2 border-[#555555] shadow-[0_0_30px_rgba(0,0,0,0.8)] pointer-events-none select-none">
+            
+            <!-- Слот 1: Камень -->
+            <div class="mc-slot relative w-16 h-16 bg-[#8b8b8b] border-2 border-[#373737] border-r-white border-b-white hover:bg-[#a0a0a0] flex items-center justify-center group">
+                <div class="absolute inset-0 border-2 border-[#8b8b8b] border-t-[#373737] border-l-[#373737] pointer-events-none"></div>
+                <span class="text-3xl filter drop-shadow-md z-10">🪨</span>
+                <span id="stone-count" class="absolute bottom-1 right-1 text-white text-xs font-bold font-mono z-20 drop-shadow-[0_2px_0_rgba(0,0,0,1)]">0</span>
+            </div>
 
-        const keys = { up: false, down: false, left: false, right: false };
+            <!-- Слот 2: Дерево -->
+            <div class="mc-slot relative w-16 h-16 bg-[#8b8b8b] border-2 border-[#373737] border-r-white border-b-white hover:bg-[#a0a0a0] flex items-center justify-center group">
+                <div class="absolute inset-0 border-2 border-[#8b8b8b] border-t-[#373737] border-l-[#373737] pointer-events-none"></div>
+                <span class="text-3xl filter drop-shadow-md z-10">🪵</span>
+                <span id="wood-count" class="absolute bottom-1 right-1 text-white text-xs font-bold font-mono z-20 drop-shadow-[0_2px_0_rgba(0,0,0,1)]">0</span>
+            </div>
 
-        // Сохранение/загрузка никнейма из localStorage
-        if (localStorage.getItem('playerNickname')) {
-            nicknameInput.value = localStorage.getItem('playerNickname');
-        }
+            <!-- Пустые слоты -->
+            <div class="mc-slot relative w-16 h-16 bg-[#8b8b8b] border-2 border-[#373737] border-r-white border-b-white opacity-40">
+                 <div class="absolute inset-0 border-2 border-[#8b8b8b] border-t-[#373737] border-l-[#373737]"></div>
+            </div>
+            <div class="mc-slot relative w-16 h-16 bg-[#8b8b8b] border-2 border-[#373737] border-r-white border-b-white opacity-40">
+                 <div class="absolute inset-0 border-2 border-[#8b8b8b] border-t-[#373737] border-l-[#373737]"></div>
+            </div>
+            <div class="mc-slot relative w-16 h-16 bg-[#8b8b8b] border-2 border-[#373737] border-r-white border-b-white opacity-40">
+                 <div class="absolute inset-0 border-2 border-[#8b8b8b] border-t-[#373737] border-l-[#373737]"></div>
+            </div>
+        </div>
+    </div>
 
-        function init() {
-            try {
-                console.log('Connecting to:', SERVER_URL);
-                socket = io(SERVER_URL, {
-                    transports: ['websocket', 'polling']
-                });
-
-                socket.on('connect', () => {
-                    isConnected = true;
-                    statusEl.textContent = `Сервер: ${SERVER_URL} | ID: ${socket.id}`;
-                    statusEl.style.color = '#4ade80';
-                });
-
-                socket.on('connect_error', (err) => {
-                    console.error('Connection error:', err);
-                    statusEl.textContent = "Ошибка подключения: " + err.message;
-                    statusEl.style.color = '#ff5555';
-                });
-
-                socket.on('disconnect', () => {
-                    isConnected = false;
-                    statusEl.textContent = "Связь с сервером потеряна...";
-                    statusEl.style.color = '#ff5555';
-                    exitGame();
-                });
-
-                socket.on('onlineCount', (count) => {
-                    onlineEl.textContent = `Online: ${count}`;
-                });
-
-                socket.on('roomList', (rooms) => {
-                    renderRoomList(rooms);
-                });
-
-                socket.on('gameStart', (initialPlayers) => {
-                    players = initialPlayers;
-                    startGame();
-                });
-                
-                socket.on('state', (serverPlayers) => {
-                    players = serverPlayers;
-                });
-
-                socket.on('error', (msg) => {
-                    alert('Ошибка от сервера: ' + msg);
-                });
-
-                setInterval(() => {
-                    if (isConnected && inGame) {
-                        socket.emit('movement', keys);
-                    }
-                }, 1000 / 60);
-
-                requestAnimationFrame(renderLoop);
-
-            } catch (e) {
-                statusEl.textContent = "Критическая ошибка JS: " + e.message;
-            }
-        }
-
-        // --- ЛОГИКА ИНТЕРФЕЙСА ---
-
-        function getNickname() {
-            const nick = nicknameInput.value.trim() || "Player";
-            localStorage.setItem('playerNickname', nick);
-            return nick;
-        }
-
-        function createRoom() {
-            if (!isConnected) return alert("Нет соединения с сервером");
-            const name = roomNameInput.value.trim();
-            const nickname = getNickname();
-            socket.emit('createRoom', name, nickname);
-        }
-
-        function joinRoom(roomId) {
-            if (!isConnected) return alert("Нет соединения с сервером");
-            const nickname = getNickname();
-            socket.emit('joinRoom', roomId, nickname);
-        }
-
-        function renderRoomList(rooms) {
-            roomListEl.innerHTML = '';
-            if (rooms.length === 0) {
-                roomListEl.innerHTML = '<div style="color: #666; padding: 10px;">Нет активных комнат</div>';
-                return;
-            }
-
-            rooms.forEach(room => {
-                const div = document.createElement('div');
-                div.className = 'room-item';
-                div.innerHTML = `
-                    <span class="room-info">${room.name}</span>
-                    <span class="room-count">Игроков: ${room.players}</span>
-                `;
-                div.onclick = () => joinRoom(room.id);
-                roomListEl.appendChild(div);
-            });
-        }
-
-        function startGame() {
-            inGame = true;
-            menuScreen.style.display = 'none';
-            canvas.style.display = 'block';
-            canvas.focus();
-        }
-
-        function exitGame() {
-            inGame = false;
-            menuScreen.style.display = 'block';
-            canvas.style.display = 'none';
-        }
-
-        // --- ИГРОВОЙ ЦИКЛ ---
-
-        function renderLoop() {
-            if (!inGame) {
-                requestAnimationFrame(renderLoop);
-                return;
-            }
-
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Сетка
-            ctx.strokeStyle = '#333';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            for (let x = 0; x <= canvas.width; x += 50) {
-                ctx.moveTo(x, 0);
-                ctx.lineTo(x, canvas.height);
-            }
-            for (let y = 0; y <= canvas.height; y += 50) {
-                ctx.moveTo(0, y);
-                ctx.lineTo(canvas.width, y);
-            }
-            ctx.stroke();
-
-            // Игроки
-            for (let id in players) {
-                const p = players[id];
-                const isMe = socket && id === socket.id;
-                
-                // Тело игрока
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 20, 0, Math.PI * 2);
-                ctx.fillStyle = p.color;
-                ctx.fill();
-
-                ctx.lineWidth = isMe ? 3 : 1;
-                ctx.strokeStyle = isMe ? '#fff' : '#000';
-                ctx.stroke();
-
-                // Никнейм
-                ctx.fillStyle = isMe ? '#ffff55' : 'white';
-                ctx.font = isMe ? 'bold 14px sans-serif' : '12px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText(p.nickname, p.x, p.y - 30);
-            }
-
-            requestAnimationFrame(renderLoop);
-        }
-
-        // Управление
-        window.addEventListener('keydown', (e) => {
-            if (!inGame) return;
-            if(e.repeat) return;
-            if (e.code === 'KeyW' || e.code === 'ArrowUp') keys.up = true;
-            if (e.code === 'KeyS' || e.code === 'ArrowDown') keys.down = true;
-            if (e.code === 'KeyA' || e.code === 'ArrowLeft') keys.left = true;
-            if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = true;
-        });
-
-        window.addEventListener('keyup', (e) => {
-            if (e.code === 'KeyW' || e.code === 'ArrowUp') keys.up = false;
-            if (e.code === 'KeyS' || e.code === 'ArrowDown') keys.down = false;
-            if (e.code === 'KeyA' || e.code === 'ArrowLeft') keys.left = false;
-            if (e.code === 'KeyD' || e.code === 'ArrowRight') keys.right = false;
-        });
-
-        init();
-    </script>
+    <script type="module" src="./index.tsx"></script>
 </body>
 </html>
