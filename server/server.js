@@ -1,3 +1,4 @@
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -25,8 +26,10 @@ app.get('/', (req, res) => {
 const rooms = {}; // { roomId: { id, name, players: {} } }
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 600;
-const PLAYER_RADIUS = 20;
-const SPEED = 5;
+
+// Константы скорости (Должны совпадать с клиентом)
+const WALK_SPEED = 3;
+const SPRINT_SPEED = 6;
 
 // Вспомогательная функция для получения списка комнат для лобби
 function getRoomList() {
@@ -75,21 +78,20 @@ io.on('connection', (socket) => {
 
   socket.on('movement', (movement) => {
     // Находим комнату, в которой находится игрок
-    // socket.rooms содержит id комнаты socket.io
-    // Нам нужно найти нашу игровую комнату
     const roomId = Array.from(socket.rooms).find(r => rooms[r]);
     
     if (roomId && rooms[roomId] && rooms[roomId].players[socket.id]) {
       const player = rooms[roomId].players[socket.id];
       
-      if (movement.left) player.x -= SPEED;
-      if (movement.up) player.y -= SPEED;
-      if (movement.right) player.x += SPEED;
-      if (movement.down) player.y += SPEED;
+      // Определяем скорость на основе флага спринта
+      const currentSpeed = movement.sprint ? SPRINT_SPEED : WALK_SPEED;
+      
+      if (movement.left) { player.x -= currentSpeed; player.direction = 'left'; }
+      if (movement.up) { player.y -= currentSpeed; player.direction = 'back'; }
+      if (movement.right) { player.x += currentSpeed; player.direction = 'right'; }
+      if (movement.down) { player.y += currentSpeed; player.direction = 'front'; }
 
-      // Ограничения мира сервера остаются простыми, коллизии с объектами - на клиенте
-      // player.x = Math.max(PLAYER_RADIUS, Math.min(CANVAS_WIDTH - PLAYER_RADIUS, player.x));
-      // player.y = Math.max(PLAYER_RADIUS, Math.min(CANVAS_HEIGHT - PLAYER_RADIUS, player.y));
+      // Ограничения мира сервера остаются простыми
     }
   });
 
@@ -124,7 +126,18 @@ function joinRoom(socket, roomId, nickname) {
     color: `hsl(${Math.random() * 360}, 70%, 50%)`,
     id: socket.id,
     nickname: nickname || "Player",
-    inventory: { stone: 0, wood: 0 } // Добавляем инвентарь
+    direction: 'front', 
+    inventory: [], // Инициализируем пустым массивом для совместимости с новой системой
+    equipment: { head: null, body: null, legs: null },
+    // Базовая инициализация статов для онлайн-игры (ВСЕ ПО 20)
+    stats: {
+        hp: 20, maxHp: 20,
+        hunger: 20, maxHunger: 20,
+        mana: 20, maxMana: 20,
+        energy: 20, maxEnergy: 20,
+        xp: 0, maxXp: 100,
+        level: 1
+    }
   };
 
   // Сообщаем клиенту, что игра началась

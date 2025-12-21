@@ -1,303 +1,380 @@
-// index.tsx: Связывает все вместе, управляет UI, сетевым взаимодействием и игровым циклом.
-import { init as initGame, renderGame, getTile, destroyTile, canMoveTo, TILE_SIZE } from './game';
-import { initInput } from './input';
-import { Players, RoomInfo, Movement, Player, TileType } from './types';
 
-interface Socket {
-  id: string;
-  on(event: string, callback: (...args: any[]) => void): this;
-  emit(event: string, ...args: any[]): this;
-  connect(): void;
-  disconnect(): void;
-}
-declare const io: (url: string, options?: any) => Socket;
+// index.tsx: Главная точка входа (Bootstrapper)
+import { Players, Player, Direction } from './types';
+import { TILE_SIZE } from './constants';
+import { initInput, inputState } from './input';
+
+// Modules
+import { gameState, setPlayers, setLocalPlayerId, getLocalPlayer } from './state';
+import { initRenderer, renderGame, adjustZoom, getCameraZoom, initRenderer as initCanvasCtx, addFloatingText } from './renderer';
+import { generateAssets } from './assets';
+import { initWorld, getInteractionType, destroyTileObject, dropItemOnGround, canMoveTo, tryPickupItem } from './world';
+import { initInventory, addItem, syncInventoryWithServer, toggleInventory, handleHotbarKey, resetInventory, isInventoryOpen, getSelectedItem, cycleHotbar } from './inventory';
+import { initUI, showGameScreen, updateOnlineCount, updateRoomList } from './ui';
+import { initNetwork, emitMovement } from './network';
+
+const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
+const gameContainer = document.getElementById('game-container') as HTMLDivElement;
+
+// HUD Elements (Bars & Text)
+const hudEls = {
+    // Bars
+    hp: document.getElementById('bar-hp-fill'),
+    hunger: document.getElementById('bar-hunger-fill'),
+    mana: document.getElementById('bar-mana-fill'),
+    energy: document.getElementById('bar-energy-fill'),
+    xp: document.getElementById('bar-xp-fill'),
+    level: document.getElementById('level-val'),
+    // Texts (Quantities)
+    textHp: document.getElementById('text-hp'),
+    textHunger: document.getElementById('text-hunger'),
+    textMana: document.getElementById('text-mana'),
+    textEnergy: document.getElementById('text-energy')
+};
+
+// Состояние майнинга
+let miningStartTime = 0;
+let miningTargetKey = "";
+let currentMiningProgress = 0; // 0..1
+let currentMiningTargetX = 0;
+let currentMiningTargetY = 0;
+
+const MINING_DURATION = 300; // мс
+
+// Скорости
+const WALK_SPEED = 3;
+const SPRINT_SPEED = 6;
+
+// FPS
+let fps = 0;
+let lastLoop = 0;
+const fpsEl = document.getElementById('fps-counter');
 
 document.addEventListener('DOMContentLoaded', () => {
-    // --- UI ЭЛЕМЕНТЫ ---
-    const startScreen = document.getElementById('start-screen') as HTMLDivElement;
-    const onlineMenu = document.getElementById('online-menu') as HTMLDivElement;
-    const gameContainer = document.getElementById('game-container') as HTMLDivElement;
-    const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
+    // 1. Инициализация подсистем
+    initCanvasCtx(canvas);
+    generateAssets();
+    initInventory();
     
-    // Кнопки главного меню
-    const btnOnline = document.getElementById('btn-online') as HTMLButtonElement;
-    const btnOffline = document.getElementById('btn-offline') as HTMLButtonElement;
-    const btnSettings = document.getElementById('btn-settings') as HTMLButtonElement;
-    const btnBackMenu = document.getElementById('btn-back-menu') as HTMLButtonElement;
+    const movement = initInput(canvas);
 
-    // Элементы Онлайн меню
-    const onlineCountSpan = document.getElementById('online-count') as HTMLSpanElement;
-    const nicknameInput = document.getElementById('nickname-input') as HTMLInputElement;
-    const roomNameInput = document.getElementById('room-name-input') as HTMLInputElement;
-    const createRoomButton = document.getElementById('create-room-button') as HTMLButtonElement;
-    const roomListContainer = document.getElementById('room-list-container') as HTMLDivElement;
-    const noRoomsMessage = document.getElementById('no-rooms-message') as HTMLParagraphElement;
+    // 2. Инициализация UI и Сети
+    initUI({
+        onStartOffline: startGameOffline
+    });
 
-    // UI в игре
-    const inventoryUI = document.getElementById('inventory-ui') as HTMLDivElement;
-    const stoneCountSpan = document.getElementById('stone-count') as HTMLSpanElement;
-    const woodCountSpan = document.getElementById('wood-count') as HTMLSpanElement;
+    initNetwork({
+        onConnect: (id) => setLocalPlayerId(id),
+        onOnlineCount: updateOnlineCount,
+        onRoomList: updateRoomList,
+        onGameStart: (players) => {
+            gameState.isOffline = false;
+            startGame(players, gameState.localPlayerId);
+        },
+        onState: (serverPlayers) => {
+            setPlayers(serverPlayers);
+            const me = serverPlayers[gameState.localPlayerId];
+            if (me && me.inventory) syncInventoryWithServer(me.inventory);
+        },
+        onError: (msg) => alert(`Ошибка: ${msg}`)
+    });
 
-    // Состояние клиента
-    let players: Players = {};
-    let localInventory = { stone: 0, wood: 0 };
-    let isOffline = false;
-    let localPlayerId = 'offline-player';
-    
-    // Подключение к серверу
-    let socket: Socket | null = null;
-    
-    const movement: Movement = initInput(canvas, handleMouseClick);
-
-    // --- ФУНКЦИИ РАЗМЕРА ЭКРАНА ---
-    
-    function resizeCanvas() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-    }
+    // 3. Обработка ввода (глобальная)
     window.addEventListener('resize', resizeCanvas);
-
-
-    // --- НАВИГАЦИЯ ПО МЕНЮ ---
-
-    function showStartScreen() {
-        startScreen.classList.remove('hidden');
-        onlineMenu.classList.add('hidden');
-        gameContainer.classList.add('hidden');
-        // Если мы были подключены, отключаемся
-        if (socket) {
-            socket.disconnect();
-            socket = null;
+    canvas.addEventListener('wheel', (e) => {
+        if (!gameContainer.classList.contains('hidden')) {
+            e.preventDefault();
+            adjustZoom(e.deltaY);
         }
-    }
-
-    function showOnlineMenu() {
-        startScreen.classList.add('hidden');
-        onlineMenu.classList.remove('hidden');
-        // Инициируем подключение
-        connectToServer();
-    }
-
-    btnOnline.addEventListener('click', showOnlineMenu);
+    }, { passive: false });
     
-    btnOffline.addEventListener('click', () => {
-        isOffline = true;
-        startGameOffline();
-    });
-
-    btnBackMenu.addEventListener('click', showStartScreen);
-
-    btnSettings.addEventListener('click', () => {
-        alert("Настройки пока в разработке!");
-    });
-
-    // --- ЛОГИКА ОНЛАЙН МЕНЮ ---
-
-    function updateLobbyButtons() {
-        const hasNickname = nicknameInput.value.trim().length > 0;
-        createRoomButton.disabled = !hasNickname;
-        
-        document.querySelectorAll<HTMLButtonElement>('.join-room-button').forEach(btn => {
-            btn.disabled = !hasNickname;
-            if (!hasNickname) {
-                btn.classList.add('opacity-50', 'cursor-not-allowed');
-            } else {
-                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+    window.addEventListener('keydown', (e) => {
+        const startScreen = document.getElementById('start-screen');
+        if (startScreen && startScreen.classList.contains('hidden')) {
+            // ИНВЕНТАРЬ: Tab или I
+            if (e.code === 'Tab' || e.code === 'KeyI') {
+                e.preventDefault();
+                toggleInventory();
             }
-        });
+
+            // ПЕРЕКЛЮЧЕНИЕ СЛОТОВ: Q (влево) / E (вправо)
+            if (e.code === 'KeyQ') cycleHotbar(-1);
+            if (e.code === 'KeyE') cycleHotbar(1);
+
+            if (e.key >= '1' && e.key <= '9') {
+                handleHotbarKey(parseInt(e.key) - 1);
+            }
+        }
+    });
+
+    function resizeCanvas() { 
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = window.innerWidth * dpr; 
+        canvas.height = window.innerHeight * dpr;
+        canvas.style.width = window.innerWidth + 'px';
+        canvas.style.height = window.innerHeight + 'px';
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+        }
     }
 
-    nicknameInput.addEventListener('input', updateLobbyButtons);
-
-    createRoomButton.addEventListener('click', () => {
-        if (!socket) return;
-        const roomName = roomNameInput.value.trim();
-        const nickname = nicknameInput.value.trim();
-        socket.emit('createRoom', roomName, nickname);
-    });
-
-    // --- УПРАВЛЕНИЕ ИГРОЙ ---
-
+    // 4. Логика старта игры
     function startGame(initialPlayers: Players, playerId: string) {
-        startScreen.classList.add('hidden');
-        onlineMenu.classList.add('hidden');
-        gameContainer.classList.remove('hidden');
+        setPlayers(initialPlayers);
+        setLocalPlayerId(playerId);
+        resetInventory();
         
-        // Устанавливаем размер canvas на весь экран при старте
+        const me = initialPlayers[playerId];
+        if (me && me.inventory) syncInventoryWithServer(me.inventory);
+
+        initWorld(me.x, me.y);
+        showGameScreen();
         resizeCanvas();
-
-        players = initialPlayers;
-        if(players[playerId].inventory) {
-            localInventory = players[playerId].inventory;
-        }
-
-        initGame(canvas, players[playerId]);
+        if (fpsEl) fpsEl.classList.remove('hidden');
         gameLoop();
     }
-    
+
     function startGameOffline() {
-        // Генерируем случайного гостя
         const nickname = "Guest_" + Math.floor(Math.random() * 1000);
-        localPlayerId = 'offline_hero';
-        
+        const pid = 'offline_hero';
         const player: Player = {
-            id: localPlayerId,
-            x: window.innerWidth / 2,
-            y: window.innerHeight / 2,
-            color: `hsl(${Math.random() * 360}, 70%, 50%)`,
+            id: pid,
+            x: window.innerWidth / 2, y: window.innerHeight / 2,
+            color: '#fff',
             nickname: nickname,
-            inventory: { stone: 0, wood: 0 }
+            direction: 'front',
+            inventory: [],
+            // Убрана начальная броня
+            equipment: { head: null, body: null, legs: null },
+            // Инициализация статов (ВСЕ ПО 20, КРОМЕ XP)
+            stats: {
+                hp: 20, maxHp: 20,
+                hunger: 20, maxHunger: 20,
+                mana: 20, maxMana: 20,
+                energy: 20, maxEnergy: 20,
+                xp: 15, maxXp: 100,
+                level: 1
+            }
         };
-        startGame({ [localPlayerId]: player }, localPlayerId);
-    }
-    
-    // --- СЕТЕВОЕ ВЗАИМОДЕЙСТВИЕ ---
-
-    function connectToServer() {
-        if (socket) return; // Уже подключены
-        
-        // ВАЖНО: autoConnect: true по умолчанию, но мы создаем объект только здесь
-        socket = io("https://rgp-game.onrender.com");
-        
-        socket.on('connect', () => {
-            console.log('Connected to server with ID:', socket!.id);
-            localPlayerId = socket!.id;
-        });
-
-        socket.on('onlineCount', (count: number) => {
-            onlineCountSpan.textContent = String(count);
-        });
-
-        socket.on('roomList', (rooms: RoomInfo[]) => {
-            roomListContainer.innerHTML = '';
-            if (rooms.length === 0) {
-                roomListContainer.appendChild(noRoomsMessage);
-                noRoomsMessage.classList.remove('hidden');
-            } else {
-                if (noRoomsMessage) noRoomsMessage.classList.add('hidden');
-                rooms.forEach(room => {
-                    const roomElement = document.createElement('div');
-                    // Обновлены стили для темной темы
-                    roomElement.className = 'flex justify-between items-center p-4 bg-slate-900 border border-slate-700 rounded-xl mb-2 hover:border-slate-500 transition group';
-                    roomElement.innerHTML = `
-                        <div>
-                            <span class="font-bold text-slate-200 group-hover:text-white transition">${room.name}</span>
-                            <span class="text-slate-500 text-sm ml-2 font-mono">(${room.players}/10)</span>
-                        </div>
-                        <button data-room-id="${room.id}" class="join-room-button bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-5 rounded-lg transition disabled:bg-slate-700 disabled:text-slate-500">
-                            Войти
-                        </button>
-                    `;
-                    roomListContainer.appendChild(roomElement);
-                });
-                
-                // Перепривязываем обработчики (так как DOM обновился)
-                updateLobbyButtons();
-            }
-        });
-
-        // Делегирование событий для кнопок "Войти"
-        roomListContainer.addEventListener('click', (e) => {
-            const target = e.target as HTMLButtonElement;
-            if (target.matches('.join-room-button')) {
-                const roomId = target.getAttribute('data-room-id');
-                const nickname = nicknameInput.value.trim();
-                
-                if (!nickname) {
-                    nicknameInput.focus();
-                    nicknameInput.classList.add('border-red-500');
-                    setTimeout(() => nicknameInput.classList.remove('border-red-500'), 500);
-                    return;
-                }
-
-                if (roomId && socket) {
-                    socket.emit('joinRoom', roomId, nickname);
-                }
-            }
-        });
-
-        socket.on('gameStart', (initialPlayers: Players) => {
-            isOffline = false;
-            startGame(initialPlayers, socket!.id);
-        });
-        
-        socket.on('state', (serverPlayers: Players) => {
-            players = serverPlayers;
-        });
-
-        socket.on('error', (message: string) => {
-            alert(`Ошибка: ${message}`);
-        });
+        startGame({ [pid]: player }, pid);
     }
 
+    // 5. Игровой цикл
+    function handleMiningLogic(me: Player) {
+        if (isInventoryOpen) {
+            currentMiningProgress = 0;
+            return;
+        }
+        
+        const isMiningAction = inputState.isRightMouseDown || inputState.isLeftMouseDown;
 
-    // --- ОБРАБОТКА ВВОДА ---
+        if (!isMiningAction) {
+            miningTargetKey = "";
+            miningStartTime = 0;
+            currentMiningProgress = 0;
+            return;
+        }
 
-    function handleMouseClick(mouseX: number, mouseY: number) {
-        const me = players[localPlayerId];
-        if (!me) return;
+        const zoom = getCameraZoom(); 
+        const screenCX = window.innerWidth / 2;
+        const screenCY = window.innerHeight / 2;
+        const worldX = (inputState.mouseX - screenCX) / zoom + me.x;
+        const worldY = (inputState.mouseY - screenCY) / zoom + me.y;
+        
+        // 1. Попытка поднять предмет (ПРИОРИТЕТ)
+        const itemType = tryPickupItem(worldX, worldY);
+        if (itemType) {
+            addItem(itemType, 1);
+            addFloatingText(worldX, worldY - 20, `+1 ${itemType}`, '#4ade80');
+            return; 
+        }
 
-        const cameraX = me.x - canvas.width / 2;
-        const cameraY = me.y - canvas.height / 2;
-        const worldX = mouseX + cameraX;
-        const worldY = mouseY + cameraY;
-        const clickedTileX = Math.floor(worldX / TILE_SIZE);
-        const clickedTileY = Math.floor(worldY / TILE_SIZE);
+        // 2. Логика разрушения тайлов
+        const targetTileX = Math.floor(worldX / TILE_SIZE);
+        const targetTileY = Math.floor(worldY / TILE_SIZE);
         const playerTileX = Math.floor(me.x / TILE_SIZE);
         const playerTileY = Math.floor(me.y / TILE_SIZE);
-        const distance = Math.sqrt(Math.pow(playerTileX - clickedTileX, 2) + Math.pow(playerTileY - clickedTileY, 2));
+        
+        const dist = Math.sqrt(Math.pow(playerTileX - targetTileX, 2) + Math.pow(playerTileY - targetTileY, 2));
+        if (dist > 4.0) {
+             currentMiningProgress = 0;
+             return; 
+        }
 
-        if (distance > 2.0) return; // Чуть увеличил радиус копания
+        const objectType = getInteractionType(targetTileX, targetTileY); // Получаем объект на тайле
+        const key = `${targetTileX},${targetTileY}`;
+        const activeItem = getSelectedItem();
+        const activeType = activeItem ? activeItem.type : 'hand';
 
-        const tileType = getTile(clickedTileX, clickedTileY);
-        if (tileType === 'tree') {
-            destroyTile(clickedTileX, clickedTileY);
-            localInventory.wood++;
-        } else if (tileType === 'stone') {
-            destroyTile(clickedTileX, clickedTileY);
-            localInventory.stone++;
+        const TIER_1_TOOLS = ['sharp_pebble', 'sharp_rock', 'stone_axe'];
+        const TIER_2_TOOLS = ['sharp_rock', 'stone_axe'];
+
+        // --- ИНИЦИАЛИЗАЦИЯ ---
+        if (miningTargetKey !== key) {
+            miningTargetKey = key;
+            miningStartTime = Date.now();
+            
+            if (objectType === 'tree' && !TIER_2_TOOLS.includes(activeType)) {
+                 addFloatingText(worldX, worldY, "Need Sharp Tool", '#ef4444');
+            } else if (objectType === 'stone' && !TIER_1_TOOLS.includes(activeType)) {
+                addFloatingText(worldX, worldY, "Need Sharp Tool", '#ef4444');
+            }
+        }
+
+        // --- РАСЧЕТ ПРОГРЕССА ---
+        if (objectType !== 'grass' && objectType !== 'water' && objectType !== 'none') {
+            const elapsed = Date.now() - miningStartTime;
+            currentMiningProgress = Math.min(elapsed / MINING_DURATION, 1.0);
+            currentMiningTargetX = targetTileX;
+            currentMiningTargetY = targetTileY;
+        } else {
+            currentMiningProgress = 0;
+        }
+
+        // --- ДЕЙСТВИЕ ---
+        if (Date.now() - miningStartTime < MINING_DURATION) return;
+        
+        miningStartTime = Date.now(); 
+
+        const tileWorldX = targetTileX * TILE_SIZE + TILE_SIZE/2;
+        const tileWorldY = targetTileY * TILE_SIZE + TILE_SIZE/2;
+
+        if (objectType === 'high_grass') {
+            destroyTileObject(targetTileX, targetTileY);
+            if (Math.random() < 0.3) {
+                 const drop = Math.random() > 0.5 ? 'stick' : 'pebble';
+                 dropItemOnGround(targetTileX, targetTileY, drop); // Падает на землю тайла
+                 addFloatingText(tileWorldX, tileWorldY - 20, `Drop: ${drop}`, '#fff');
+            }
+        }
+        else if (objectType === 'tree') {
+            if (activeType === 'sharp_rock') {
+                addItem('bark', 1);
+                addFloatingText(tileWorldX, tileWorldY - 40, "+1 Bark", '#d97706');
+            } else if (activeType === 'stone_axe') {
+                destroyTileObject(targetTileX, targetTileY);
+                addItem('wood', 2);
+                addFloatingText(tileWorldX, tileWorldY - 40, "+2 Logs", '#fff');
+            }
+        }
+        else if (objectType === 'stone') {
+            if (TIER_1_TOOLS.includes(activeType)) {
+                destroyTileObject(targetTileX, targetTileY);
+                addItem('rock', 1);
+                addFloatingText(tileWorldX, tileWorldY - 20, "+1 Rock", '#94a3b8');
+            }
         }
     }
-
-    // --- ИГРОВОЙ ЦИКЛ ---
 
     function gameLoop() {
         if (gameContainer.classList.contains('hidden')) return;
         
-        const me = players[localPlayerId];
+        const now = performance.now();
+        const delta = now - lastLoop;
+        lastLoop = now;
+        if (delta > 0) {
+            const currentFps = 1000 / delta;
+            fps = fps * 0.9 + currentFps * 0.1;
+            if (fpsEl && Math.random() < 0.1) { 
+                fpsEl.textContent = `FPS: ${Math.round(fps)}`;
+                fpsEl.style.color = fps < 30 ? '#ef4444' : (fps < 50 ? '#fcd34d' : '#4ade80');
+            }
+        }
+
+        const me = getLocalPlayer();
+        
         if (me) {
-            const SPEED = 5;
-            const PLAYER_RADIUS = 20;
+            handleMiningLogic(me);
 
-            if (isOffline) {
-                // В оффлайн режиме двигаем игрока локально
-                let dx = 0;
-                let dy = 0;
-                if (movement.up) dy -= SPEED;
-                if (movement.down) dy += SPEED;
-                if (movement.left) dx -= SPEED;
-                if (movement.right) dx += SPEED;
+            // --- РАСЧЕТ СКОРОСТИ ---
+            // 1. Управление энергией
+            let canSprint = false;
+            if (me.stats) {
+                // Если пытаемся бежать
+                if (movement.sprint && me.stats.energy > 0) {
+                    canSprint = true;
+                    me.stats.energy -= 0.2; // Тратим энергию (медленнее для 20 единиц)
+                    if (me.stats.energy < 0) me.stats.energy = 0;
+                } else if (!movement.sprint) {
+                    // Если не бежим, восстанавливаем энергию
+                    if (me.stats.energy < me.stats.maxEnergy) {
+                        me.stats.energy += 0.1;
+                    }
+                }
+            }
 
-                if (canMoveTo(me.x + dx, me.y + dy, PLAYER_RADIUS * 2, PLAYER_RADIUS * 2)) {
+            // 2. Базовая скорость
+            let currentSpeed = canSprint ? SPRINT_SPEED : WALK_SPEED;
+            
+            // 3. Модификаторы местности
+            const tileX = Math.floor(me.x / TILE_SIZE);
+            const tileY = Math.floor(me.y / TILE_SIZE);
+            const currentTileData = getInteractionType(tileX, tileY); 
+            
+            // В воде скорость делится на 2 (и шаг, и бег)
+            if (currentTileData === 'water') {
+                currentSpeed *= 0.5;
+            }
+
+            const PLAYER_RADIUS = 16;
+            let dx = 0, dy = 0;
+            let newDir: Direction = me.direction;
+            
+            if (movement.up) { dy -= currentSpeed; newDir = 'back'; }
+            if (movement.down) { dy += currentSpeed; newDir = 'front'; }
+            if (movement.left) { dx -= currentSpeed; newDir = 'left'; }
+            if (movement.right) { dx += currentSpeed; newDir = 'right'; }
+            
+            if (dx !== 0 || dy !== 0) { 
+                me.direction = newDir; 
+                (window as any).isLocalMoving = true; 
+            } else { 
+                (window as any).isLocalMoving = false; 
+            }
+            
+            if (gameState.isOffline) { 
+                // Sliding Movement Logic
+                
+                // 1. Проверяем движение по X
+                if (dx !== 0 && canMoveTo(me.x + dx, me.y, PLAYER_RADIUS * 2, PLAYER_RADIUS * 2)) {
                     me.x += dx;
+                }
+                
+                // 2. Проверяем движение по Y
+                if (dy !== 0 && canMoveTo(me.x, me.y + dy, PLAYER_RADIUS * 2, PLAYER_RADIUS * 2)) {
                     me.y += dy;
                 }
-            } else {
-                 // В онлайн режиме отправляем ввод на сервер
-                const filteredMovement = { ...movement };
-                if (filteredMovement.up && !canMoveTo(me.x, me.y - SPEED, PLAYER_RADIUS * 2, PLAYER_RADIUS * 2)) filteredMovement.up = false;
-                if (filteredMovement.down && !canMoveTo(me.x, me.y + SPEED, PLAYER_RADIUS * 2, PLAYER_RADIUS * 2)) filteredMovement.down = false;
-                if (filteredMovement.left && !canMoveTo(me.x - SPEED, me.y, PLAYER_RADIUS * 2, PLAYER_RADIUS * 2)) filteredMovement.left = false;
-                if (filteredMovement.right && !canMoveTo(me.x + SPEED, me.y, PLAYER_RADIUS * 2, PLAYER_RADIUS * 2)) filteredMovement.right = false;
-                socket?.emit('movement', filteredMovement);
+            } else { 
+                const filteredMovement = { ...movement, sprint: canSprint }; 
+                emitMovement(filteredMovement);
+            }
+
+            // --- ОБНОВЛЕНИЕ HUD ---
+            if (me.stats) {
+                // Обновляем ширину полосок
+                if (hudEls.hp) hudEls.hp.style.width = `${(me.stats.hp / me.stats.maxHp) * 100}%`;
+                if (hudEls.hunger) hudEls.hunger.style.width = `${(me.stats.hunger / me.stats.maxHunger) * 100}%`;
+                if (hudEls.mana) hudEls.mana.style.width = `${(me.stats.mana / me.stats.maxMana) * 100}%`;
+                if (hudEls.energy) hudEls.energy.style.width = `${(me.stats.energy / me.stats.maxEnergy) * 100}%`;
+                if (hudEls.xp) hudEls.xp.style.width = `${(me.stats.xp / me.stats.maxXp) * 100}%`;
+                
+                // Обновляем текст (округляем до целого)
+                if (hudEls.textHp) hudEls.textHp.textContent = String(Math.floor(me.stats.hp));
+                if (hudEls.textHunger) hudEls.textHunger.textContent = String(Math.floor(me.stats.hunger));
+                if (hudEls.textMana) hudEls.textMana.textContent = String(Math.floor(me.stats.mana));
+                if (hudEls.textEnergy) hudEls.textEnergy.textContent = String(Math.floor(me.stats.energy));
+                
+                if (hudEls.level) hudEls.level.textContent = String(me.stats.level);
             }
         }
         
-        // Обновляем UI
-        stoneCountSpan.textContent = String(localInventory.stone);
-        woodCountSpan.textContent = String(localInventory.wood);
-
-        renderGame(players, localPlayerId);
+        // Передаем флаг спринта (movement.sprint) и реальную возможность бежать (me.stats.energy > 0)
+        // Но для камеры используем просто намерение игрока или факт бега
+        const isSprintingEffective = movement.sprint && me?.stats && me.stats.energy > 0;
+        
+        renderGame(currentMiningProgress, currentMiningTargetX, currentMiningTargetY, !!isSprintingEffective);
         requestAnimationFrame(gameLoop);
     }
 });
