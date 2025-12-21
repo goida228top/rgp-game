@@ -89,15 +89,22 @@ document.addEventListener('DOMContentLoaded', () => {
             if (me && serverMe) {
                 if (serverMe.inventory) syncInventoryWithServer(serverMe.inventory);
                 
-                // ВАЖНО: Синхронизируем статы, НО НЕ ЭНЕРГИЮ.
-                // Энергия управляется полностью клиентом, чтобы избежать "дерганья" при беге.
+                // ВАЖНО: Синхронизируем статы
                 if (serverMe.stats) {
                     me.stats.hp = serverMe.stats.hp;
                     me.stats.maxHp = serverMe.stats.maxHp;
                     me.stats.hunger = serverMe.stats.hunger;
-                    // me.stats.energy НЕ трогаем, оно локальное
                     me.stats.xp = serverMe.stats.xp;
                     me.stats.level = serverMe.stats.level;
+
+                    // SMART ENERGY SYNC (Анти-джиттер + Анти-чит)
+                    // Сервер считает энергию сам. Мы берем её оттуда.
+                    // НО, чтобы полоска не скакала из-за пинга, мы обновляем локальную энергию
+                    // только если разница между клиентом и сервером БОЛЬШЕ 5 единиц.
+                    // Это позволяет игнорировать мелкие лаги, но сбрасывает читеров.
+                    if (Math.abs(me.stats.energy - serverMe.stats.energy) > 5) {
+                        me.stats.energy = serverMe.stats.energy;
+                    }
                 }
 
                 // LOGIC: Rubber Banding (Телепортация только при ГРУБОМ нарушении)
@@ -355,7 +362,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (me.stats) {
                 if (movement.sprint && me.stats.energy > 0) {
                     canSprint = true;
-                    me.stats.energy -= 0.2; 
+                    // Клиентский прогноз (0.1) - должен совпадать с сервером
+                    me.stats.energy -= 0.1; 
                     if (me.stats.energy < 0) me.stats.energy = 0;
                 } else if (!movement.sprint) {
                     if (me.stats.energy < me.stats.maxEnergy) {
@@ -400,9 +408,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     x: me.x, 
                     y: me.y, 
                     direction: me.direction, 
-                    sprint: canSprint,
-                    // ОТПРАВЛЯЕМ ЭНЕРГИЮ НА СЕРВЕР
-                    energy: me.stats.energy 
+                    sprint: canSprint
+                    // Energy больше не отправляем!
                 }; 
                 emitMovement(payload);
             }

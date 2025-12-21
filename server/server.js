@@ -223,8 +223,6 @@ io.on('connection', (socket) => {
       
       // 1. Проверка скорости (Anti-Speedhack)
       const dist = Math.sqrt(Math.pow(newX - player.x, 2) + Math.pow(newY - player.y, 2));
-      
-      // УВЕЛИЧЕНО до 100, чтобы компенсировать задержки сети и накопление пакетов
       const MAX_DIST_PER_TICK = 100.0; 
 
       if (dist > MAX_DIST_PER_TICK) {
@@ -238,14 +236,21 @@ io.on('connection', (socket) => {
           return;
       }
 
-      // Обновляем состояние
+      // 3. Обновляем позицию
       player.x = newX;
       player.y = newY;
       player.direction = data.direction;
       
-      // Принимаем уровень энергии от клиента
-      if (typeof data.energy === 'number') {
-          player.stats.energy = data.energy;
+      // 4. РАСЧЕТ ЭНЕРГИИ НА СЕРВЕРЕ (Анти-чит для бесконечного спринта)
+      // Мы НЕ принимаем энергию от клиента. Мы считаем её сами.
+      const isSprinting = data.sprint;
+      
+      if (isSprinting && player.stats.energy > 0) {
+          // Тратим энергию (скорость 0.1 как на клиенте)
+          player.stats.energy = Math.max(0, player.stats.energy - 0.1);
+      } else {
+          // Восстанавливаем энергию
+          player.stats.energy = Math.min(player.stats.maxEnergy, player.stats.energy + 0.1);
       }
     }
   });
