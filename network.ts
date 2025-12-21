@@ -21,6 +21,7 @@ let onGameStartCb: (players: Players, worldChanges: WorldUpdate[], seed?: string
 let onStateCb: (players: Players) => void = () => {};
 let onWorldUpdateCb: (update: WorldUpdate) => void = () => {};
 let onErrorCb: (msg: string) => void = () => {};
+let onDebugLogCb: (msg: string) => void = () => {};
 
 export function initNetwork(callbacks: {
     onConnect: (id: string) => void,
@@ -29,7 +30,8 @@ export function initNetwork(callbacks: {
     onGameStart: (players: Players, worldChanges: WorldUpdate[], seed?: string) => void,
     onState: (players: Players) => void,
     onWorldUpdate: (update: WorldUpdate) => void,
-    onError: (msg: string) => void
+    onError: (msg: string) => void,
+    onDebugLog?: (msg: string) => void // Опциональный коллбек
 }) {
     onConnectCb = callbacks.onConnect;
     onOnlineCountCb = callbacks.onOnlineCount;
@@ -38,6 +40,7 @@ export function initNetwork(callbacks: {
     onStateCb = callbacks.onState;
     onWorldUpdateCb = callbacks.onWorldUpdate;
     onErrorCb = callbacks.onError;
+    if (callbacks.onDebugLog) onDebugLogCb = callbacks.onDebugLog;
 }
 
 export function connectToServer() {
@@ -50,6 +53,7 @@ export function connectToServer() {
     socket.on('state', onStateCb);
     socket.on('worldUpdate', onWorldUpdateCb);
     socket.on('error', onErrorCb);
+    socket.on('debugLog', onDebugLogCb); // Ловим дебаг сообщения
 }
 
 export function disconnectFromServer() {

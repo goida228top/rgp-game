@@ -235,14 +235,16 @@ io.on('connection', (socket) => {
       const MAX_DIST_PER_TICK = 25.0; 
 
       if (dist > MAX_DIST_PER_TICK) {
-          // Игрок телепортировался или двигается слишком быстро.
-          // Игнорируем обновление. Клиент получит старую позицию в следующем тике 'state'.
+          // DEBUG LOG ОТПРАВКА
+          socket.emit('debugLog', `SERVER REJECT: Слишком быстро! Дист: ${dist.toFixed(2)}px (Макс: ${MAX_DIST_PER_TICK})`);
           return;
       }
 
       // 2. Проверка коллизий (Anti-Wallhack)
       // Если клиент говорит, что он внутри стены - не верим.
       if (!canMoveTo(roomId, newX, newY)) {
+          // DEBUG LOG ОТПРАВКА
+          socket.emit('debugLog', `SERVER REJECT: Коллизия (Стена/Дерево) в точках ${newX.toFixed(0)}, ${newY.toFixed(0)}`);
           return;
       }
 

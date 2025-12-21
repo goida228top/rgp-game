@@ -96,6 +96,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const MAX_TOLERANCE = 150; // Увеличено со 100 до 150
                 
                 if (dist > MAX_TOLERANCE) {
+                    // ЛОГИРУЕМ ПРИЧИНУ ОТКАТА В КОНСОЛЬ
+                    console.warn(`%c[CLIENT RECONCILIATION] Телепортация! Рассинхрон: ${dist.toFixed(0)}px. Клиент: (${me.x.toFixed(0)},${me.y.toFixed(0)}) -> Сервер: (${serverMe.x.toFixed(0)},${serverMe.y.toFixed(0)})`, 'color: orange; font-weight: bold;');
+                    
                     // Сервер принудительно возвращает нас (значит мы прошли сквозь стену или использовали спидхак)
                     me.x = serverMe.x;
                     me.y = serverMe.y;
@@ -111,7 +114,11 @@ document.addEventListener('DOMContentLoaded', () => {
         onWorldUpdate: (update) => {
             applyWorldUpdate(update);
         },
-        onError: (msg) => alert(`Ошибка: ${msg}`)
+        onError: (msg) => alert(`Ошибка: ${msg}`),
+        onDebugLog: (msg) => {
+            // ВЫВОДИМ СООБЩЕНИЯ ОТ СЕРВЕРА ЯРКО КРАСНЫМ
+            console.error(`%c${msg}`, 'background: #ffcccc; color: red; font-size: 14px; font-weight: bold; border: 1px solid red; padding: 2px;');
+        }
     });
 
     // 3. Обработка ввода (глобальная)
