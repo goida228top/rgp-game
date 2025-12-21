@@ -43,7 +43,8 @@ export function initUI(callbacks: { onStartOffline: () => void }) {
     
     els.nicknameInput?.addEventListener('input', updateLobbyButtons);
     els.createRoomBtn?.addEventListener('click', () => {
-        emitCreateRoom(els.roomNameInput.value.trim(), els.nicknameInput.value.trim());
+        // Передаем текущий сид из настроек
+        emitCreateRoom(els.roomNameInput.value.trim(), els.nicknameInput.value.trim(), gameState.worldSeed);
     });
 
     els.roomList?.addEventListener('click', (e: Event) => {

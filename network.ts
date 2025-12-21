@@ -17,7 +17,7 @@ export let socket: Socket | null = null;
 let onConnectCb: (id: string) => void = () => {};
 let onOnlineCountCb: (count: number) => void = () => {};
 let onRoomListCb: (rooms: RoomInfo[]) => void = () => {};
-let onGameStartCb: (players: Players, worldChanges: WorldUpdate[]) => void = () => {};
+let onGameStartCb: (players: Players, worldChanges: WorldUpdate[], seed?: string) => void = () => {};
 let onStateCb: (players: Players) => void = () => {};
 let onWorldUpdateCb: (update: WorldUpdate) => void = () => {};
 let onErrorCb: (msg: string) => void = () => {};
@@ -26,7 +26,7 @@ export function initNetwork(callbacks: {
     onConnect: (id: string) => void,
     onOnlineCount: (count: number) => void,
     onRoomList: (rooms: RoomInfo[]) => void,
-    onGameStart: (players: Players, worldChanges: WorldUpdate[]) => void,
+    onGameStart: (players: Players, worldChanges: WorldUpdate[], seed?: string) => void,
     onState: (players: Players) => void,
     onWorldUpdate: (update: WorldUpdate) => void,
     onError: (msg: string) => void
@@ -59,8 +59,8 @@ export function disconnectFromServer() {
     }
 }
 
-export function emitCreateRoom(roomName: string, nickname: string) {
-    socket?.emit('createRoom', roomName, nickname);
+export function emitCreateRoom(roomName: string, nickname: string, seed: string) {
+    socket?.emit('createRoom', roomName, nickname, seed);
 }
 
 export function emitJoinRoom(roomId: string, nickname: string) {

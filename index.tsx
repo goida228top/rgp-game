@@ -67,8 +67,14 @@ document.addEventListener('DOMContentLoaded', () => {
         onConnect: (id) => setLocalPlayerId(id),
         onOnlineCount: updateOnlineCount,
         onRoomList: updateRoomList,
-        onGameStart: (players, worldChanges) => {
+        onGameStart: (players, worldChanges, seed) => {
             gameState.isOffline = false;
+            
+            // СИНХРОНИЗАЦИЯ СИДА С СЕРВЕРОМ
+            if (seed) {
+                gameState.worldSeed = seed;
+            }
+
             // Применяем накопленные изменения мира
             if (worldChanges) {
                 worldChanges.forEach(update => applyWorldUpdate(update));
@@ -77,36 +83,29 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         onState: (serverPlayers) => {
             // STATE RECONCILIATION (Согласование состояния)
-            // Мы не просто заменяем игроков, мы проверяем локального игрока.
-            
             const me = getLocalPlayer();
             const serverMe = serverPlayers[gameState.localPlayerId];
 
             if (me && serverMe) {
-                // Синхронизируем инвентарь и статы (они важны с сервера)
                 if (serverMe.inventory) syncInventoryWithServer(serverMe.inventory);
                 if (serverMe.stats) me.stats = serverMe.stats;
 
-                // LOGIC: Rubber Banding (Телепортация при сильном рассинхроне)
+                // LOGIC: Rubber Banding
                 const dist = Math.sqrt(Math.pow(me.x - serverMe.x, 2) + Math.pow(me.y - serverMe.y, 2));
-                const MAX_TOLERANCE = 100; // Если рассинхрон больше 100px, сервер прав
+                const MAX_TOLERANCE = 100; 
                 
                 if (dist > MAX_TOLERANCE) {
                     me.x = serverMe.x;
                     me.y = serverMe.y;
-                    // Можно добавить эффект "лаг"
                 } else {
-                    // Если рассинхрон маленький, мы игнорируем координаты сервера для своего игрока,
-                    // чтобы движение было плавным (Client Prediction).
-                    // Но мы обновляем координаты ВСЕХ ОСТАЛЬНЫХ игроков.
-                    serverPlayers[gameState.localPlayerId] = me; // Подменяем серверного собой в общем списке
+                    // Client Prediction: игнорируем сервер для своих координат, если рассинхрон невелик
+                    serverPlayers[gameState.localPlayerId] = me; 
                 }
             }
             
             setPlayers(serverPlayers);
         },
         onWorldUpdate: (update) => {
-            // Пришло обновление мира от другого игрока (или от нас через сервер)
             applyWorldUpdate(update);
         },
         onError: (msg) => alert(`Ошибка: ${msg}`)
@@ -162,8 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const me = initialPlayers[playerId];
         if (me && me.inventory) syncInventoryWithServer(me.inventory);
 
-        // В онлайн режиме карта уже частично синхронизирована через worldUpdates,
-        // но базовая генерация должна совпадать по сиду.
+        // Инициализация мира с актуальным сидом
         initWorld(me.x, me.y);
         showGameScreen();
         resizeCanvas();
@@ -181,9 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
             nickname: nickname,
             direction: 'front',
             inventory: [],
-            // Убрана начальная броня
             equipment: { head: null, body: null, legs: null },
-            // Инициализация статов
             stats: {
                 hp: 20, maxHp: 20,
                 hunger: 20, maxHunger: 20,
@@ -218,11 +214,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const worldX = (inputState.mouseX - screenCX) / zoom + me.x;
         const worldY = (inputState.mouseY - screenCY) / zoom + me.y;
         
-        // 1. Попытка поднять предмет (ПРИОРИТЕТ)
-        // Предварительная проверка
+        // 1. Попытка поднять предмет
         const pickupType = tryPickupItem(worldX, worldY);
         if (pickupType) {
-            // Фактическое действие
             const tileX = Math.floor(worldX / TILE_SIZE);
             const tileY = Math.floor(worldY / TILE_SIZE);
             const item = pickupItemAt(tileX, tileY);
@@ -230,8 +224,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (item) {
                 addItem(item, 1);
                 addFloatingText(worldX, worldY - 20, `+1 ${item}`, '#4ade80');
-                
-                // СЕТЕВАЯ СИНХРОНИЗАЦИЯ: Поднятие предмета
                 if (!gameState.isOffline) {
                     emitWorldUpdate({ x: tileX, y: tileY, action: 'pickup_item' });
                 }
@@ -251,7 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
              return; 
         }
 
-        const objectType = getInteractionType(targetTileX, targetTileY); // Получаем объект на тайле
+        const objectType = getInteractionType(targetTileX, targetTileY); 
         const key = `${targetTileX},${targetTileY}`;
         const activeItem = getSelectedItem();
         const activeType = activeItem ? activeItem.type : 'hand';
@@ -289,21 +281,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const tileWorldX = targetTileX * TILE_SIZE + TILE_SIZE/2;
         const tileWorldY = targetTileY * TILE_SIZE + TILE_SIZE/2;
         
-        // Функция для дропа с синхронизацией
         const syncDrop = (tX: number, tY: number, iType: string) => {
-            // Сначала пытаемся разместить локально (для предсказания)
-            // Но world.ts теперь требует явной логики.
-            // Упрощение: используем forcePlaceItem или dropItemOnGround локально, 
-            // а серверу шлем place_item
             dropItemOnGround(tX, tY, iType); 
             if (!gameState.isOffline) {
-                // При дропе на землю точные координаты "вокруг" сложнее синхронизировать идеально 
-                // без сложной логики. Для простоты шлем обновление на КОНКРЕТНЫЙ тайл.
                 emitWorldUpdate({ x: tX, y: tY, action: 'place_item', data: iType });
             }
         };
         
-        // Функция разрушения с синхронизацией
         const syncDestroy = (tX: number, tY: number) => {
             destroyTileObject(tX, tY);
             if (!gameState.isOffline) {
@@ -358,7 +342,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (me) {
             handleMiningLogic(me);
 
-            // --- РАСЧЕТ СКОРОСТИ ---
             let canSprint = false;
             if (me.stats) {
                 if (movement.sprint && me.stats.energy > 0) {
@@ -390,12 +373,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (movement.right) { dx += currentSpeed; newDir = 'right'; }
             
             // --- CLIENT-SIDE PREDICTION ---
-            // Мы двигаем игрока ЛОКАЛЬНО всегда, независимо от сервера.
             if (dx !== 0 || dy !== 0) { 
                 me.direction = newDir; 
                 (window as any).isLocalMoving = true; 
                 
-                // Проверка коллизий локально
+                // Client Collision Check
                 if (dx !== 0 && canMoveTo(me.x + dx, me.y, PLAYER_RADIUS * 2, PLAYER_RADIUS * 2)) {
                     me.x += dx;
                 }
@@ -407,13 +389,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             if (!gameState.isOffline) { 
-                // Отправляем инпуты на сервер. Сервер проверит их и вернет "авторитетную" позицию.
-                // Если мы слишком сильно отклонились, onState нас поправит.
                 const filteredMovement = { ...movement, sprint: canSprint }; 
                 emitMovement(filteredMovement);
             }
 
-            // --- ОБНОВЛЕНИЕ HUD ---
+            // HUD
             if (me.stats) {
                 if (hudEls.hp) hudEls.hp.style.width = `${(me.stats.hp / me.stats.maxHp) * 100}%`;
                 if (hudEls.hunger) hudEls.hunger.style.width = `${(me.stats.hunger / me.stats.maxHunger) * 100}%`;
