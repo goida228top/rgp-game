@@ -88,23 +88,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (me && serverMe) {
                 if (serverMe.inventory) syncInventoryWithServer(serverMe.inventory);
-                if (serverMe.stats) me.stats = serverMe.stats;
+                
+                // ВАЖНО: Синхронизируем статы, НО НЕ ЭНЕРГИЮ.
+                // Энергия управляется полностью клиентом, чтобы избежать "дерганья" при беге.
+                if (serverMe.stats) {
+                    me.stats.hp = serverMe.stats.hp;
+                    me.stats.maxHp = serverMe.stats.maxHp;
+                    me.stats.hunger = serverMe.stats.hunger;
+                    // me.stats.energy НЕ трогаем, оно локальное
+                    me.stats.xp = serverMe.stats.xp;
+                    me.stats.level = serverMe.stats.level;
+                }
 
                 // LOGIC: Rubber Banding (Телепортация только при ГРУБОМ нарушении)
-                // Мы увеличиваем допуск, чтобы сервер не дергал игрока из-за мелких лагов
                 const dist = Math.sqrt(Math.pow(me.x - serverMe.x, 2) + Math.pow(me.y - serverMe.y, 2));
-                const MAX_TOLERANCE = 150; // Увеличено со 100 до 150
+                const MAX_TOLERANCE = 150; 
                 
                 if (dist > MAX_TOLERANCE) {
-                    // ЛОГИРУЕМ ПРИЧИНУ ОТКАТА В КОНСОЛЬ
-                    console.warn(`%c[CLIENT RECONCILIATION] Телепортация! Рассинхрон: ${dist.toFixed(0)}px. Клиент: (${me.x.toFixed(0)},${me.y.toFixed(0)}) -> Сервер: (${serverMe.x.toFixed(0)},${serverMe.y.toFixed(0)})`, 'color: orange; font-weight: bold;');
-                    
-                    // Сервер принудительно возвращает нас (значит мы прошли сквозь стену или использовали спидхак)
+                    console.warn(`%c[CLIENT RECONCILIATION] Телепортация! Рассинхрон: ${dist.toFixed(0)}px.`, 'color: orange; font-weight: bold;');
                     me.x = serverMe.x;
                     me.y = serverMe.y;
                 } else {
-                    // CLIENT AUTHORITY: Мы полностью игнорируем позицию сервера для себя,
-                    // пока она в пределах допустимого. Сервер просто принимает наши координаты.
+                    // Игнорируем позицию сервера, пока она близка к нашей
                     serverPlayers[gameState.localPlayerId] = me; 
                 }
             }
@@ -116,7 +121,6 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         onError: (msg) => alert(`Ошибка: ${msg}`),
         onDebugLog: (msg) => {
-            // ВЫВОДИМ СООБЩЕНИЯ ОТ СЕРВЕРА ЯРКО КРАСНЫМ
             console.error(`%c${msg}`, 'background: #ffcccc; color: red; font-size: 14px; font-weight: bold; border: 1px solid red; padding: 2px;');
         }
     });
@@ -224,7 +228,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const worldX = (inputState.mouseX - screenCX) / zoom + me.x;
         const worldY = (inputState.mouseY - screenCY) / zoom + me.y;
         
-        // 1. Попытка поднять предмет
         const pickupType = tryPickupItem(worldX, worldY);
         if (pickupType) {
             const tileX = Math.floor(worldX / TILE_SIZE);
@@ -241,7 +244,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return; 
         }
 
-        // 2. Логика разрушения тайлов
         const targetTileX = Math.floor(worldX / TILE_SIZE);
         const targetTileY = Math.floor(worldY / TILE_SIZE);
         const playerTileX = Math.floor(me.x / TILE_SIZE);
@@ -261,7 +263,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const TIER_1_TOOLS = ['sharp_pebble', 'sharp_rock', 'stone_axe'];
         const TIER_2_TOOLS = ['sharp_rock', 'stone_axe'];
 
-        // --- ИНИЦИАЛИЗАЦИЯ ---
         if (miningTargetKey !== key) {
             miningTargetKey = key;
             miningStartTime = Date.now();
@@ -273,7 +274,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // --- РАСЧЕТ ПРОГРЕССА ---
         if (objectType !== 'grass' && objectType !== 'water' && objectType !== 'none') {
             const elapsed = Date.now() - miningStartTime;
             currentMiningProgress = Math.min(elapsed / MINING_DURATION, 1.0);
@@ -283,7 +283,6 @@ document.addEventListener('DOMContentLoaded', () => {
             currentMiningProgress = 0;
         }
 
-        // --- ДЕЙСТВИЕ ---
         if (Date.now() - miningStartTime < MINING_DURATION) return;
         
         miningStartTime = Date.now(); 
@@ -382,13 +381,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (movement.left) { dx -= currentSpeed; newDir = 'left'; }
             if (movement.right) { dx += currentSpeed; newDir = 'right'; }
             
-            // --- CLIENT AUTHORITY ---
-            // Мы двигаем игрока ЛОКАЛЬНО всегда.
             if (dx !== 0 || dy !== 0) { 
                 me.direction = newDir; 
                 (window as any).isLocalMoving = true; 
                 
-                // Client Collision Check
                 if (dx !== 0 && canMoveTo(me.x + dx, me.y, PLAYER_RADIUS * 2, PLAYER_RADIUS * 2)) {
                     me.x += dx;
                 }
@@ -400,13 +396,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             if (!gameState.isOffline) { 
-                // ТЕПЕРЬ МЫ ОТПРАВЛЯЕМ КООРДИНАТЫ, А НЕ КНОПКИ
-                // Сервер проверит их валидность (расстояние и коллизию)
                 const payload = { 
                     x: me.x, 
                     y: me.y, 
                     direction: me.direction, 
-                    sprint: canSprint 
+                    sprint: canSprint,
+                    // ОТПРАВЛЯЕМ ЭНЕРГИЮ НА СЕРВЕР
+                    energy: me.stats.energy 
                 }; 
                 emitMovement(payload);
             }

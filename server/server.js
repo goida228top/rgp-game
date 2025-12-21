@@ -22,13 +22,10 @@ app.get('/', (req, res) => {
 });
 
 // Глобальные переменные
-const rooms = {}; // { roomId: { id, name, seed, players: {}, worldChanges: [] } }
+const rooms = {}; 
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 600;
 const TILE_SIZE = 40;
-
-const WALK_SPEED = 3;
-const SPRINT_SPEED = 6;
 
 // --- МАТЕМАТИКА ГЕНЕРАЦИИ (КОПИЯ С КЛИЕНТА) ---
 
@@ -215,8 +212,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // --- ВАЖНО: НОВАЯ ЛОГИКА ДВИЖЕНИЯ ---
-  // Клиент присылает свои координаты. Мы их валидируем.
   socket.on('movement', (data) => {
     const roomId = Array.from(socket.rooms).find(r => rooms[r]);
     
@@ -227,32 +222,31 @@ io.on('connection', (socket) => {
       const newY = data.y;
       
       // 1. Проверка скорости (Anti-Speedhack)
-      // Считаем дистанцию между старой и новой позицией
       const dist = Math.sqrt(Math.pow(newX - player.x, 2) + Math.pow(newY - player.y, 2));
       
-      // Максимально возможная скорость за тик + погрешность (лаги, джиттер)
-      // Допускаем большой скачок (до 20px), чтобы не дергало при редких пакетах
-      const MAX_DIST_PER_TICK = 25.0; 
+      // УВЕЛИЧЕНО до 100, чтобы компенсировать задержки сети и накопление пакетов
+      const MAX_DIST_PER_TICK = 100.0; 
 
       if (dist > MAX_DIST_PER_TICK) {
-          // DEBUG LOG ОТПРАВКА
           socket.emit('debugLog', `SERVER REJECT: Слишком быстро! Дист: ${dist.toFixed(2)}px (Макс: ${MAX_DIST_PER_TICK})`);
           return;
       }
 
-      // 2. Проверка коллизий (Anti-Wallhack)
-      // Если клиент говорит, что он внутри стены - не верим.
+      // 2. Проверка коллизий
       if (!canMoveTo(roomId, newX, newY)) {
-          // DEBUG LOG ОТПРАВКА
           socket.emit('debugLog', `SERVER REJECT: Коллизия (Стена/Дерево) в точках ${newX.toFixed(0)}, ${newY.toFixed(0)}`);
           return;
       }
 
-      // Если все ок - обновляем состояние на сервере
+      // Обновляем состояние
       player.x = newX;
       player.y = newY;
       player.direction = data.direction;
-      // direction и sprint нужны для анимации у других игроков
+      
+      // Принимаем уровень энергии от клиента
+      if (typeof data.energy === 'number') {
+          player.stats.energy = data.energy;
+      }
     }
   });
 
