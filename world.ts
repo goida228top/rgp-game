@@ -101,6 +101,60 @@ export function getInteractionType(tileX: number, tileY: number): string {
     return 'grass';
 }
 
+/**
+ * Проверяет, находится ли точка в воде.
+ * Учитывает диагональные маски (треугольники травы).
+ */
+export function isPositionInWater(x: number, y: number): boolean {
+    const tileX = Math.floor(x / TILE_SIZE);
+    const tileY = Math.floor(y / TILE_SIZE);
+    const data = getTileData(tileX, tileY);
+
+    if (data.terrain !== 'water') return false;
+
+    // Проверяем соседей, чтобы определить, есть ли угловые маски
+    const isTopLand = getTileData(tileX, tileY - 1).terrain !== 'water';
+    const isBottomLand = getTileData(tileX, tileY + 1).terrain !== 'water';
+    const isLeftLand = getTileData(tileX - 1, tileY).terrain !== 'water';
+    const isRightLand = getTileData(tileX + 1, tileY).terrain !== 'water';
+
+    // Локальные координаты внутри тайла (0..40)
+    // Добавляем TILE_SIZE и берем остаток, чтобы корректно работать с отрицательными координатами
+    const lx = ((x % TILE_SIZE) + TILE_SIZE) % TILE_SIZE;
+    const ly = ((y % TILE_SIZE) + TILE_SIZE) % TILE_SIZE;
+
+    // TL (Верхний Левый) - Трава сверху и слева.
+    // Треугольник травы: (0,0)-(40,0)-(0,40). Уравнение гипотенузы: x + y = 40.
+    // Если lx + ly < 40, мы на траве.
+    if (isTopLand && isLeftLand) {
+        if (lx + ly < TILE_SIZE) return false; 
+    }
+
+    // TR (Верхний Правый) - Трава сверху и справа.
+    // Треугольник травы: (0,0)-(40,0)-(40,40). Уравнение гипотенузы: y = x.
+    // Если lx > ly, мы на траве.
+    if (isTopLand && isRightLand) {
+        if (lx > ly) return false;
+    }
+
+    // BL (Нижний Левый) - Трава снизу и слева.
+    // Треугольник травы: (0,0)-(0,40)-(40,40). Уравнение гипотенузы: y = x.
+    // Если lx < ly, мы на траве.
+    if (isBottomLand && isLeftLand) {
+        if (lx < ly) return false;
+    }
+
+    // BR (Нижний Правый) - Трава снизу и справа.
+    // Треугольник травы: (40,0)-(40,40)-(0,40). Уравнение гипотенузы: x + y = 40 (относительно правого низа? Нет).
+    // Точки (40,0) и (0,40). Линия x + y = 40.
+    // Если lx + ly > 40, мы на траве.
+    if (isBottomLand && isRightLand) {
+        if (lx + ly > TILE_SIZE) return false;
+    }
+
+    return true;
+}
+
 export function destroyTileObject(tileX: number, tileY: number) {
     const key = `${tileX},${tileY}`;
     if (!world[key]) world[key] = { terrain: 'grass', object: 'none', items: [] };
@@ -223,8 +277,7 @@ function generateBiomedWorld(playerX: number, playerY: number) {
             const key = `${x},${y}`;
             const tile: TileData = { terrain: 'grass', object: 'none', items: [] };
 
-            // ИСПРАВЛЕНИЕ: Безопасная зона теперь в центре мира (0,0), а не вокруг игрока.
-            // Это гарантирует, что сервер и клиент видят одинаковые деревья, независимо от того, где спавнится игрок.
+            // ИСПРАВЛЕНИЕ: Безопасная зона теперь в центре мира (0,0)
             const distFromCenter = Math.sqrt(x*x + y*y);
             if (distFromCenter < 5) { // 5 тайлов от (0,0) чисто
                 world[key] = tile;
@@ -239,27 +292,69 @@ function generateBiomedWorld(playerX: number, playerY: number) {
             if (elev < 0.35) {
                 tile.terrain = 'water';
             } else {
+                // БИОМ 1: ЛЕС (Влажно)
                 if (moist > 0.55) {
                     const isSpacingValid = (Math.abs(x) % 2 === 0) && (Math.abs(y) % 2 === 0);
                     if (isSpacingValid && rnd > 0.25) { 
-                        tile.object = 'tree';
-                        if (rnd > 0.8) tile.items.push('stick');
+                        // ПРОВЕРКА ВОДЫ РЯДОМ (Радиус 2)
+                        let isWaterNear = false;
+                        for(let dx=-2; dx<=2; dx++){
+                            for(let dy=-2; dy<=2; dy++){
+                                 if (elevationGen.get((x+dx)*scale, (y+dy)*scale) < 0.35) {
+                                     isWaterNear = true; break;
+                                 }
+                            }
+                            if(isWaterNear) break;
+                        }
+
+                        if (!isWaterNear) {
+                             tile.object = 'tree';
+                             if (rnd > 0.8) tile.items.push('stick');
+                        } else {
+                             tile.object = 'high_grass';
+                        }
                     } else if (rnd > 0.1) {
                         tile.object = 'high_grass';
                     }
                 } 
+                // БИОМ 2: ЛУГА (Средне)
                 else if (moist > 0.3) {
                     const isSpacingValid = (Math.abs(x) % 2 === 0) && (Math.abs(y) % 2 === 0);
-                    if (isSpacingValid && rnd > 0.75) {
-                        tile.object = 'tree';
-                    } else if (rnd > 0.4) {
+                    if (isSpacingValid && rnd > 0.85) { 
+                        // ПРОВЕРКА ВОДЫ РЯДОМ (Радиус 2)
+                        let isWaterNear = false;
+                        for(let dx=-2; dx<=2; dx++){
+                            for(let dy=-2; dy<=2; dy++){
+                                 if (elevationGen.get((x+dx)*scale, (y+dy)*scale) < 0.35) {
+                                     isWaterNear = true; break;
+                                 }
+                            }
+                            if(isWaterNear) break;
+                        }
+                        
+                        if (!isWaterNear) {
+                            tile.object = 'tree';
+                        } else {
+                            tile.object = 'high_grass';
+                        }
+                    } else if (rnd > 0.5) {
                         tile.object = 'high_grass';
+                    } else if (rnd > 0.45) { // БЫЛО > 0.3. Стало реже в 3 раза.
+                        // Немного гальки на лугах
+                        tile.items.push('pebble');
                     }
                 }
+                // БИОМ 3: ПУСТОШЬ (Сухо)
                 else {
-                    if (rnd > 0.85) {
+                    // КАМНИ (Объекты): ОЧЕНЬ РЕДКО (> 0.98, т.е. 2%)
+                    if (rnd > 0.98) {
                         tile.object = 'stone';
-                        if (rnd > 0.92) tile.items.push('pebble');
+                    }
+                    // ГАЛЬКА (Предметы):
+                    // БЫЛО > 0.2 (диапазон 0.2..0.98 = 78%). 
+                    // СТАЛО > 0.75 (диапазон 0.75..0.98 = 23%). Уменьшили в ~3.4 раза.
+                    else if (rnd > 0.75) { 
+                         tile.items.push('pebble');
                     }
                 }
             }

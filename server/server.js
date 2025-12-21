@@ -130,18 +130,45 @@ function isColliding(roomId, worldX, worldY) {
     } else {
         if (moist > 0.55) {
             const isSpacingValid = (Math.abs(tileX) % 2 === 0) && (Math.abs(tileY) % 2 === 0);
-            if (isSpacingValid && rnd > 0.25) object = 'tree';
+            if (isSpacingValid && rnd > 0.25) {
+                // ПРОВЕРКА ВОДЫ РЯДОМ (Радиус 2) - Синхронизация с клиентом
+                let isWaterNear = false;
+                for(let dx=-2; dx<=2; dx++){
+                    for(let dy=-2; dy<=2; dy++){
+                         if (gens.elevation.get((tileX+dx)*scale, (tileY+dy)*scale) < 0.35) {
+                             isWaterNear = true; break;
+                         }
+                    }
+                    if(isWaterNear) break;
+                }
+                
+                if (!isWaterNear) object = 'tree';
+            }
         } 
         else if (moist > 0.3) {
             const isSpacingValid = (Math.abs(tileX) % 2 === 0) && (Math.abs(tileY) % 2 === 0);
-            if (isSpacingValid && rnd > 0.75) object = 'tree';
+            if (isSpacingValid && rnd > 0.85) {
+                // ПРОВЕРКА ВОДЫ РЯДОМ (Радиус 2) - Синхронизация с клиентом
+                let isWaterNear = false;
+                for(let dx=-2; dx<=2; dx++){
+                    for(let dy=-2; dy<=2; dy++){
+                         if (gens.elevation.get((tileX+dx)*scale, (tileY+dy)*scale) < 0.35) {
+                             isWaterNear = true; break;
+                         }
+                    }
+                    if(isWaterNear) break;
+                }
+
+                if (!isWaterNear) object = 'tree'; 
+            }
         }
         else {
-            if (rnd > 0.85) object = 'stone'; 
+            // КАМНИ ОЧЕНЬ РЕДКО
+            if (rnd > 0.98) object = 'stone'; 
         }
     }
 
-    if (object === 'tree') return true;
+    if (object === 'tree' || object === 'stone') return true;
     return false;
 }
 
@@ -242,14 +269,10 @@ io.on('connection', (socket) => {
       player.direction = data.direction;
       
       // 4. РАСЧЕТ ЭНЕРГИИ НА СЕРВЕРЕ (Анти-чит для бесконечного спринта)
-      // Мы НЕ принимаем энергию от клиента. Мы считаем её сами.
       const isSprinting = data.sprint;
-      
       if (isSprinting && player.stats.energy > 0) {
-          // Тратим энергию (скорость 0.1 как на клиенте)
           player.stats.energy = Math.max(0, player.stats.energy - 0.1);
       } else {
-          // Восстанавливаем энергию
           player.stats.energy = Math.min(player.stats.maxEnergy, player.stats.energy + 0.1);
       }
     }
@@ -263,6 +286,21 @@ io.on('connection', (socket) => {
             rooms[roomId].worldChanges.shift();
         }
         socket.to(roomId).emit('worldUpdate', update);
+    }
+  });
+
+  // ЧАТ: Принимаем и рассылаем сообщение всем в комнате
+  socket.on('chatMessage', (text) => {
+    const roomId = Array.from(socket.rooms).find(r => rooms[r]);
+    if (roomId && rooms[roomId] && rooms[roomId].players[socket.id]) {
+        const player = rooms[roomId].players[socket.id];
+        // Рассылаем всем (включая отправителя, для простоты)
+        io.to(roomId).emit('chatMessage', {
+            senderId: socket.id,
+            nickname: player.nickname,
+            text: text,
+            color: player.color
+        });
     }
   });
 

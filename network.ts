@@ -22,6 +22,8 @@ let onStateCb: (players: Players) => void = () => {};
 let onWorldUpdateCb: (update: WorldUpdate) => void = () => {};
 let onErrorCb: (msg: string) => void = () => {};
 let onDebugLogCb: (msg: string) => void = () => {};
+// Chat
+let onChatMessageCb: (data: { senderId: string, nickname: string, text: string, color: string }) => void = () => {};
 
 export function initNetwork(callbacks: {
     onConnect: (id: string) => void,
@@ -31,7 +33,8 @@ export function initNetwork(callbacks: {
     onState: (players: Players) => void,
     onWorldUpdate: (update: WorldUpdate) => void,
     onError: (msg: string) => void,
-    onDebugLog?: (msg: string) => void // Опциональный коллбек
+    onDebugLog?: (msg: string) => void,
+    onChatMessage?: (data: { senderId: string, nickname: string, text: string, color: string }) => void
 }) {
     onConnectCb = callbacks.onConnect;
     onOnlineCountCb = callbacks.onOnlineCount;
@@ -41,6 +44,7 @@ export function initNetwork(callbacks: {
     onWorldUpdateCb = callbacks.onWorldUpdate;
     onErrorCb = callbacks.onError;
     if (callbacks.onDebugLog) onDebugLogCb = callbacks.onDebugLog;
+    if (callbacks.onChatMessage) onChatMessageCb = callbacks.onChatMessage;
 }
 
 export function connectToServer() {
@@ -54,6 +58,7 @@ export function connectToServer() {
     socket.on('worldUpdate', onWorldUpdateCb);
     socket.on('error', onErrorCb);
     socket.on('debugLog', onDebugLogCb); // Ловим дебаг сообщения
+    socket.on('chatMessage', onChatMessageCb);
 }
 
 export function disconnectFromServer() {
@@ -77,4 +82,8 @@ export function emitMovement(movement: any) {
 
 export function emitWorldUpdate(update: WorldUpdate) {
     socket?.emit('worldUpdate', update);
+}
+
+export function emitChatMessage(text: string) {
+    socket?.emit('chatMessage', text);
 }

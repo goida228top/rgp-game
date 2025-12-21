@@ -4,7 +4,7 @@ import { TILE_SIZE } from './constants';
 import { Player } from './types';
 import { gameState } from './state';
 import { textures, charSprites, AnimFrame } from './assets';
-import { getTileData } from './world';
+import { getTileData, isPositionInWater } from './world';
 import { getSelectedItem } from './inventory';
 
 let canvas: HTMLCanvasElement | null = null;
@@ -88,10 +88,8 @@ export function drawCharacterPreview(ctxPreview: CanvasRenderingContext2D, playe
 
 // Изменено: принимает isSprinting
 function drawPlayer(ctx: CanvasRenderingContext2D, player: Player, isLocal: boolean, isMoving: boolean, isSprinting: boolean) {
-    const tileX = Math.floor(player.x / TILE_SIZE);
-    const tileY = Math.floor(player.y / TILE_SIZE);
-    const tileData = getTileData(tileX, tileY);
-    const isInWater = tileData.terrain === 'water';
+    // ИСПОЛЬЗУЕМ НОВУЮ ФУНКЦИЮ ДЛЯ ПРОВЕРКИ ВОДЫ
+    const isInWater = isPositionInWater(player.x, player.y);
 
     const x = player.x;
     let y = player.y;
@@ -241,8 +239,44 @@ export function renderGame(miningProgress: number = 0, targetX: number = 0, targ
         
         const tileData = getTileData(x, y);
         
+        // --- ОТРИСОВКА ЗЕМЛИ И ВОДЫ ---
         if (tileData.terrain === 'water') {
+            // 1. Рисуем базу воды (Сплошной цвет)
             ctx.drawImage(textures['water'], screenX, screenY, TILE_SIZE, TILE_SIZE);
+            
+            // 1.1 Рисуем волны (редко, 15% шанс, зависит от координат, чтобы не мерцало при движении камеры)
+            // Простейший псевдо-рандом от координат
+            const waveHash = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+            // Дробная часть от 0 до 1. Если > 0.85, значит рисуем волну (15% шанс)
+            const isWave = (waveHash - Math.floor(waveHash)) > 0.85; 
+
+            if (isWave) {
+                // Анимация: плавает вверх-вниз
+                const waveBob = Math.sin(Date.now() / 500) * 2;
+                ctx.drawImage(textures['water_wave'], screenX, screenY + waveBob, TILE_SIZE, TILE_SIZE);
+            }
+
+            // 2. Сглаживание углов (Autotiling)
+            // Проверяем соседей. Если сосед - НЕ вода, значит это суша.
+            const isTopLand = getTileData(x, y - 1).terrain !== 'water';
+            const isBottomLand = getTileData(x, y + 1).terrain !== 'water';
+            const isLeftLand = getTileData(x - 1, y).terrain !== 'water';
+            const isRightLand = getTileData(x + 1, y).terrain !== 'water';
+
+            // Накладываем маски углов травы поверх воды и волн
+            if (isTopLand && isLeftLand) {
+                ctx.drawImage(textures['mask_corner_tl'], screenX, screenY, TILE_SIZE, TILE_SIZE);
+            }
+            if (isTopLand && isRightLand) {
+                ctx.drawImage(textures['mask_corner_tr'], screenX, screenY, TILE_SIZE, TILE_SIZE);
+            }
+            if (isBottomLand && isLeftLand) {
+                ctx.drawImage(textures['mask_corner_bl'], screenX, screenY, TILE_SIZE, TILE_SIZE);
+            }
+            if (isBottomLand && isRightLand) {
+                ctx.drawImage(textures['mask_corner_br'], screenX, screenY, TILE_SIZE, TILE_SIZE);
+            }
+
         } else {
             ctx.drawImage(textures['grass'], screenX, screenY, TILE_SIZE, TILE_SIZE);
         }

@@ -1,13 +1,24 @@
 
-// ui.ts: Управление экранами меню, лобби и настроек
+// ui.ts: Управление экранами меню, лобби, настроек и ЧАТА
 import { RoomInfo } from './types';
 import { gameState } from './state';
-import { connectToServer, emitCreateRoom, emitJoinRoom, disconnectFromServer } from './network';
+import { connectToServer, emitCreateRoom, emitJoinRoom, disconnectFromServer, emitChatMessage } from './network';
 
 let els: any = {};
 
 // Callbacks для старта игры
 let onStartOffline: () => void = () => {};
+
+// CHAT STATE
+export let isChatOpen = false;
+
+// Генератор случайного числового сида (как в Minecraft)
+// Возвращает строку от "-999999999" до "999999999"
+function generateRandomSeed(): string {
+    const min = -999999999;
+    const max = 999999999;
+    return Math.floor(Math.random() * (max - min + 1) + min).toString();
+}
 
 export function initUI(callbacks: { onStartOffline: () => void }) {
     onStartOffline = callbacks.onStartOffline;
@@ -23,11 +34,16 @@ export function initUI(callbacks: { onStartOffline: () => void }) {
         noRoomsMsg: document.getElementById('no-rooms-message'),
         nicknameInput: document.getElementById('nickname-input'),
         roomNameInput: document.getElementById('room-name-input'),
+        roomSeedInput: document.getElementById('room-seed-input'),
         createRoomBtn: document.getElementById('create-room-button'),
         settingsModal: document.getElementById('settings-modal'),
         toggleTestWorld: document.getElementById('toggle-test-world'),
         toggleDebugGrid: document.getElementById('toggle-debug-grid'),
         seedInput: document.getElementById('seed-input'),
+        // Chat
+        chatInputWrapper: document.getElementById('chat-input-wrapper'),
+        chatInput: document.getElementById('chat-input'),
+        chatMessages: document.getElementById('chat-messages')
     };
 
     // Слушатели кнопок
@@ -42,9 +58,14 @@ export function initUI(callbacks: { onStartOffline: () => void }) {
     document.getElementById('btn-back-menu')?.addEventListener('click', showStartScreen);
     
     els.nicknameInput?.addEventListener('input', updateLobbyButtons);
+    
+    // ЛОГИКА СОЗДАНИЯ КОМНАТЫ С СИДОМ
     els.createRoomBtn?.addEventListener('click', () => {
-        // Передаем текущий сид из настроек
-        emitCreateRoom(els.roomNameInput.value.trim(), els.nicknameInput.value.trim(), gameState.worldSeed);
+        // Если поле пустое, генерируем случайный числовой сид
+        const rawSeed = els.roomSeedInput.value.trim();
+        const specificSeed = rawSeed.length > 0 ? rawSeed : generateRandomSeed();
+        
+        emitCreateRoom(els.roomNameInput.value.trim(), els.nicknameInput.value.trim(), specificSeed);
     });
 
     els.roomList?.addEventListener('click', (e: Event) => {
@@ -56,16 +77,107 @@ export function initUI(callbacks: { onStartOffline: () => void }) {
             if (roomId) emitJoinRoom(roomId, nickname);
         }
     });
+
+    // CHAT Listeners
+    els.chatInput?.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            const text = els.chatInput.value.trim();
+            if (text.length > 0) {
+                handleChatSend(text);
+            }
+            toggleChat(false);
+            els.chatInput.value = '';
+        }
+        e.stopPropagation(); // Чтобы не срабатывали игровые бинды
+    });
 }
+
+// --- CHAT LOGIC ---
+
+export function toggleChat(forceState?: boolean) {
+    if (typeof forceState !== 'undefined') {
+        isChatOpen = forceState;
+    } else {
+        isChatOpen = !isChatOpen;
+    }
+
+    if (isChatOpen) {
+        els.chatInputWrapper.style.display = 'block';
+        els.chatInput.focus();
+    } else {
+        els.chatInputWrapper.style.display = 'none';
+        els.chatInput.blur();
+        // Возвращаем фокус на игру
+        if (els.canvas) els.canvas.focus();
+    }
+}
+
+export function addChatMessage(nickname: string, text: string, color: string = 'white', isSystem: boolean = false) {
+    const div = document.createElement('div');
+    div.className = `chat-message ${isSystem ? 'system' : ''}`;
+    
+    if (isSystem) {
+         div.innerHTML = `<span>${text}</span>`;
+    } else {
+        // Экранирование HTML
+        const safeNick = nickname.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const safeText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        
+        div.innerHTML = `<span style="color: ${color}; font-weight: bold;">${safeNick}:</span> <span style="color: #e2e8f0;">${safeText}</span>`;
+    }
+
+    els.chatMessages.appendChild(div);
+    els.chatMessages.scrollTop = els.chatMessages.scrollHeight;
+
+    // Авто-удаление через 15 сек (опционально, но делает чат чище)
+    setTimeout(() => {
+        if (div.parentNode) {
+            div.style.opacity = '0';
+            div.style.transition = 'opacity 1s';
+            setTimeout(() => div.remove(), 1000);
+        }
+    }, 15000);
+}
+
+function handleChatSend(text: string) {
+    if (text.startsWith('/seed')) {
+        // Локальная команда
+        const seed = gameState.worldSeed;
+        addChatMessage("SYSTEM", `Current Seed: ${seed}`, "#facc15", true);
+        
+        // Копирование в буфер
+        navigator.clipboard.writeText(seed).then(() => {
+            addChatMessage("SYSTEM", "(Copied to clipboard)", "#4ade80", true);
+        }).catch(err => {
+             console.error('Could not copy seed: ', err);
+        });
+        
+    } else {
+        // Обычное сообщение -> на сервер
+        if (gameState.isOffline) {
+            addChatMessage("YOU", text, "#fff");
+            addChatMessage("SYSTEM", "Chat is disabled in offline mode.", "#ef4444", true);
+        } else {
+            emitChatMessage(text);
+        }
+    }
+}
+
+// --- SETTINGS LOGIC ---
 
 function openSettings() { els.settingsModal.classList.remove('hidden'); }
 function closeSettings() { els.settingsModal.classList.add('hidden'); }
 function saveSettings() { 
     gameState.useTestWorld = els.toggleTestWorld.checked; 
     gameState.showDebugGrid = els.toggleDebugGrid.checked;
-    // Сохраняем сид. Если пустой - дефолтный
+    
     const seedVal = els.seedInput.value.trim();
-    gameState.worldSeed = seedVal.length > 0 ? seedVal : 'terrawilds';
+    
+    // Если пользователь оставил поле пустым, мы пока сохраняем пустую строку,
+    // чтобы при запуске сгенерировать случайный сид.
+    // Если он ввел что-то - сохраняем это.
+    gameState.worldSeed = seedVal; 
+    
     closeSettings(); 
 }
 
@@ -74,6 +186,8 @@ export function showStartScreen() {
     els.onlineMenu.classList.add('hidden');
     els.gameContainer.classList.add('hidden');
     disconnectFromServer();
+    // Очистка чата при выходе
+    els.chatMessages.innerHTML = '';
 }
 
 function showOnlineMenu() {

@@ -204,6 +204,64 @@ function generateHumanSprites() {
     });
 }
 
+// Генерация масок для углов воды (ДИАГОНАЛЬНОЕ ОБРЕЗАНИЕ)
+function generateWaterMasks() {
+    const corners = ['tl', 'tr', 'bl', 'br'];
+    
+    corners.forEach(corner => {
+        const [c, ctx] = createHiResCanvas(TILE_SIZE, TILE_SIZE);
+        
+        // Настраиваем цвет травы
+        ctx.fillStyle = '#4e8c33';
+        
+        ctx.beginPath();
+        
+        // Логика: Разрезаем квадрат по диагонали на 2 треугольника.
+        // Заливаем тот треугольник, который прилегает к суше.
+        
+        if (corner === 'tl') {
+            // Маска для ВЕРХНЕГО ЛЕВОГО угла.
+            ctx.moveTo(0, 0);           // Top Left
+            ctx.lineTo(TILE_SIZE, 0);   // Top Right
+            ctx.lineTo(0, TILE_SIZE);   // Bottom Left
+        } 
+        else if (corner === 'tr') {
+            // Маска для ВЕРХНЕГО ПРАВОГО угла.
+            ctx.moveTo(0, 0);           // Top Left
+            ctx.lineTo(TILE_SIZE, 0);   // Top Right
+            ctx.lineTo(TILE_SIZE, TILE_SIZE); // Bottom Right
+        }
+        else if (corner === 'bl') {
+            // Маска для НИЖНЕГО ЛЕВОГО угла.
+            ctx.moveTo(0, 0);           // Top Left
+            ctx.lineTo(0, TILE_SIZE);   // Bottom Left
+            ctx.lineTo(TILE_SIZE, TILE_SIZE); // Bottom Right
+        }
+        else if (corner === 'br') {
+            // Маска для НИЖНЕГО ПРАВОГО угла.
+            ctx.moveTo(TILE_SIZE, 0);   // Top Right
+            ctx.lineTo(TILE_SIZE, TILE_SIZE); // Bottom Right
+            ctx.lineTo(0, TILE_SIZE);   // Bottom Left
+        }
+        
+        ctx.closePath();
+        ctx.fill();
+        
+        // Добавляем шум на траву (только внутри нарисованной фигуры)
+        ctx.save();
+        ctx.clip(); 
+        ctx.fillStyle = 'rgba(255,255,255,0.03)';
+        for(let i=0; i<10; i++) {
+             ctx.fillRect(Math.random()*TILE_SIZE, Math.random()*TILE_SIZE, 2, 2);
+        }
+        ctx.restore();
+
+        // УБРАНА ОТРИСОВКА ОБВОДКИ (ctx.stroke)
+
+        textures[`mask_corner_${corner}`] = c;
+    });
+}
+
 export function generateAssets() {
     // 1. Обычная трава (Однотонная)
     const [grassC, gCtx] = createHiResCanvas(TILE_SIZE, TILE_SIZE);
@@ -235,14 +293,25 @@ export function generateAssets() {
     }
     textures['high_grass'] = hGrassC;
 
-    // 2. Вода
+    // 2. Вода (Сплошной цвет)
     const [waterC, wCtx] = createHiResCanvas(TILE_SIZE, TILE_SIZE);
-    const waterGrad = wCtx.createRadialGradient(TILE_SIZE/2, TILE_SIZE/2, 0, TILE_SIZE/2, TILE_SIZE/2, TILE_SIZE);
-    waterGrad.addColorStop(0, '#4FA4F4'); waterGrad.addColorStop(1, '#2979FF'); 
-    wCtx.fillStyle = waterGrad; wCtx.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-    wCtx.strokeStyle = 'rgba(255, 255, 255, 0.3)'; wCtx.lineWidth = 2;
-    wCtx.beginPath(); wCtx.moveTo(5, 10); wCtx.quadraticCurveTo(15, 5, 25, 10); wCtx.stroke();
+    wCtx.fillStyle = '#3b82f6'; // Однотонный ярко-голубой
+    wCtx.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
     textures['water'] = waterC;
+
+    // 2.1 Текстура ВОЛНЫ (Отдельный оверлей)
+    const [waveC, waveCtx] = createHiResCanvas(TILE_SIZE, TILE_SIZE);
+    waveCtx.strokeStyle = 'rgba(255, 255, 255, 0.4)'; // Белая полупрозрачная
+    waveCtx.lineWidth = 2;
+    waveCtx.lineCap = 'round';
+    waveCtx.beginPath();
+    // Рисуем маленькую аккуратную волну в центре
+    waveCtx.moveTo(12, 22);
+    waveCtx.quadraticCurveTo(20, 18, 28, 22);
+    waveCtx.stroke();
+    textures['water_wave'] = waveC;
+
+    generateWaterMasks(); // Генерируем маски
 
     // 3. Камень (Big Stone Node) - 1.5x size
     const stoneSize = TILE_SIZE * 1.5; // 60px
