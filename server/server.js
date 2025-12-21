@@ -31,7 +31,6 @@ const WALK_SPEED = 3;
 const SPRINT_SPEED = 6;
 
 // --- МАТЕМАТИКА ГЕНЕРАЦИИ (КОПИЯ С КЛИЕНТА) ---
-// Это нужно, чтобы сервер видел те же деревья, что и клиент
 
 function cyrb128(str) {
     let h1 = 1779033703, h2 = 3144134277,
@@ -92,7 +91,7 @@ class Noise2D {
     }
 }
 
-// Кэш генераторов шума для комнат: { roomId: { elevation, moisture, object } }
+// Кэш генераторов шума для комнат
 const noiseCache = {};
 
 function getNoiseGenerators(roomId, seed) {
@@ -106,16 +105,14 @@ function getNoiseGenerators(roomId, seed) {
     return noiseCache[roomId];
 }
 
-// Проверка коллизии на сервере (On-the-fly generation)
 function isColliding(roomId, worldX, worldY) {
     const room = rooms[roomId];
     if (!room) return false;
 
-    // Сначала проверяем динамические изменения (если дерево срубили)
     const tileX = Math.floor(worldX / TILE_SIZE);
     const tileY = Math.floor(worldY / TILE_SIZE);
     
-    // Проверяем историю изменений
+    // Проверяем динамические изменения
     const destroyed = room.worldChanges.some(u => u.x === tileX && u.y === tileY && u.action === 'destroy_object');
     if (destroyed) return false;
 
@@ -123,7 +120,6 @@ function isColliding(roomId, worldX, worldY) {
     const distFromCenter = Math.sqrt(tileX*tileX + tileY*tileY);
     if (distFromCenter < 5) return false;
 
-    // Генерируем тайл
     const gens = getNoiseGenerators(roomId, room.seed);
     const scale = 0.08;
     const elev = gens.elevation.get(tileX * scale, tileY * scale);
@@ -144,22 +140,18 @@ function isColliding(roomId, worldX, worldY) {
             if (isSpacingValid && rnd > 0.75) object = 'tree';
         }
         else {
-            if (rnd > 0.85) object = 'stone'; // Камни тоже твердые
+            if (rnd > 0.85) object = 'stone'; 
         }
     }
 
     if (object === 'tree') return true;
-    
     return false;
 }
 
-// Проверка возможности перемещения (квадрат игрока)
+// Проверка возможности перемещения (Валидация на сервере)
 function canMoveTo(roomId, x, y) {
-    const width = 32; // Ширина хитбокса игрока
+    const width = 32; 
     const height = 32;
-    
-    // ВАЖНО: Добавлен padding, чтобы соответствовать клиенту
-    // Это делает хитбокс "худее" (17px вместо 32px), позволяя проходить между деревьями так же, как на клиенте
     const padding = 15; 
     const checkWidth = width - padding;
     const checkHeight = height - padding;
@@ -198,12 +190,9 @@ io.on('connection', (socket) => {
   io.emit('onlineCount', io.engine.clientsCount);
   socket.emit('roomList', getRoomList());
 
-  // Создание комнаты теперь принимает SEED
   socket.on('createRoom', (roomName, nickname, seed) => {
     const roomId = crypto.randomBytes(4).toString('hex');
     const name = roomName || `Комната ${roomId.substr(0,4)}`;
-    
-    // Используем сид клиента или дефолтный
     const roomSeed = seed || 'terrawilds';
 
     rooms[roomId] = {
@@ -226,29 +215,42 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('movement', (movement) => {
+  // --- ВАЖНО: НОВАЯ ЛОГИКА ДВИЖЕНИЯ ---
+  // Клиент присылает свои координаты. Мы их валидируем.
+  socket.on('movement', (data) => {
     const roomId = Array.from(socket.rooms).find(r => rooms[r]);
     
     if (roomId && rooms[roomId] && rooms[roomId].players[socket.id]) {
       const player = rooms[roomId].players[socket.id];
-      const currentSpeed = movement.sprint ? SPRINT_SPEED : WALK_SPEED;
       
-      let nextX = player.x;
-      let nextY = player.y;
+      const newX = data.x;
+      const newY = data.y;
+      
+      // 1. Проверка скорости (Anti-Speedhack)
+      // Считаем дистанцию между старой и новой позицией
+      const dist = Math.sqrt(Math.pow(newX - player.x, 2) + Math.pow(newY - player.y, 2));
+      
+      // Максимально возможная скорость за тик + погрешность (лаги, джиттер)
+      // Допускаем большой скачок (до 20px), чтобы не дергало при редких пакетах
+      const MAX_DIST_PER_TICK = 25.0; 
 
-      if (movement.left) { nextX -= currentSpeed; player.direction = 'left'; }
-      if (movement.up) { nextY -= currentSpeed; player.direction = 'back'; }
-      if (movement.right) { nextX += currentSpeed; player.direction = 'right'; }
-      if (movement.down) { nextY += currentSpeed; player.direction = 'front'; }
+      if (dist > MAX_DIST_PER_TICK) {
+          // Игрок телепортировался или двигается слишком быстро.
+          // Игнорируем обновление. Клиент получит старую позицию в следующем тике 'state'.
+          return;
+      }
 
-      // ВАЖНО: Сервер проверяет коллизию перед движением!
-      // Используем ту же логику скольжения, что и на клиенте
-      if (canMoveTo(roomId, nextX, player.y)) {
-          player.x = nextX;
+      // 2. Проверка коллизий (Anti-Wallhack)
+      // Если клиент говорит, что он внутри стены - не верим.
+      if (!canMoveTo(roomId, newX, newY)) {
+          return;
       }
-      if (canMoveTo(roomId, player.x, nextY)) {
-          player.y = nextY;
-      }
+
+      // Если все ок - обновляем состояние на сервере
+      player.x = newX;
+      player.y = newY;
+      player.direction = data.direction;
+      // direction и sprint нужны для анимации у других игроков
     }
   });
 
@@ -272,12 +274,11 @@ io.on('connection', (socket) => {
         delete rooms[roomId].players[socket.id];
         if (Object.keys(rooms[roomId].players).length === 0) {
           delete rooms[roomId];
-          delete noiseCache[roomId]; // Чистим кэш
+          delete noiseCache[roomId];
         }
         break; 
       }
     }
-    
     io.emit('roomList', getRoomList());
   });
 });
@@ -306,7 +307,6 @@ function joinRoom(socket, roomId, nickname) {
     }
   };
 
-  // ОТПРАВЛЯЕМ SEED КОМНАТЫ КЛИЕНТУ
   socket.emit('gameStart', room.players, room.worldChanges, room.seed);
 }
 

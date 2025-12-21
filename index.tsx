@@ -90,15 +90,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (serverMe.inventory) syncInventoryWithServer(serverMe.inventory);
                 if (serverMe.stats) me.stats = serverMe.stats;
 
-                // LOGIC: Rubber Banding
+                // LOGIC: Rubber Banding (Телепортация только при ГРУБОМ нарушении)
+                // Мы увеличиваем допуск, чтобы сервер не дергал игрока из-за мелких лагов
                 const dist = Math.sqrt(Math.pow(me.x - serverMe.x, 2) + Math.pow(me.y - serverMe.y, 2));
-                const MAX_TOLERANCE = 100; 
+                const MAX_TOLERANCE = 150; // Увеличено со 100 до 150
                 
                 if (dist > MAX_TOLERANCE) {
+                    // Сервер принудительно возвращает нас (значит мы прошли сквозь стену или использовали спидхак)
                     me.x = serverMe.x;
                     me.y = serverMe.y;
                 } else {
-                    // Client Prediction: игнорируем сервер для своих координат, если рассинхрон невелик
+                    // CLIENT AUTHORITY: Мы полностью игнорируем позицию сервера для себя,
+                    // пока она в пределах допустимого. Сервер просто принимает наши координаты.
                     serverPlayers[gameState.localPlayerId] = me; 
                 }
             }
@@ -372,7 +375,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (movement.left) { dx -= currentSpeed; newDir = 'left'; }
             if (movement.right) { dx += currentSpeed; newDir = 'right'; }
             
-            // --- CLIENT-SIDE PREDICTION ---
+            // --- CLIENT AUTHORITY ---
+            // Мы двигаем игрока ЛОКАЛЬНО всегда.
             if (dx !== 0 || dy !== 0) { 
                 me.direction = newDir; 
                 (window as any).isLocalMoving = true; 
@@ -389,8 +393,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             if (!gameState.isOffline) { 
-                const filteredMovement = { ...movement, sprint: canSprint }; 
-                emitMovement(filteredMovement);
+                // ТЕПЕРЬ МЫ ОТПРАВЛЯЕМ КООРДИНАТЫ, А НЕ КНОПКИ
+                // Сервер проверит их валидность (расстояние и коллизию)
+                const payload = { 
+                    x: me.x, 
+                    y: me.y, 
+                    direction: me.direction, 
+                    sprint: canSprint 
+                }; 
+                emitMovement(payload);
             }
 
             // HUD
