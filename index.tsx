@@ -1,6 +1,6 @@
 
 // index.tsx: Главная точка входа (Bootstrapper)
-import { Players, Player, Direction } from './types';
+import { Players, Player, Direction, WorldUpdate } from './types';
 import { TILE_SIZE } from './constants';
 import { initInput, inputState } from './input';
 
@@ -8,10 +8,10 @@ import { initInput, inputState } from './input';
 import { gameState, setPlayers, setLocalPlayerId, getLocalPlayer } from './state';
 import { initRenderer, renderGame, adjustZoom, getCameraZoom, initRenderer as initCanvasCtx, addFloatingText } from './renderer';
 import { generateAssets } from './assets';
-import { initWorld, getInteractionType, destroyTileObject, dropItemOnGround, canMoveTo, tryPickupItem } from './world';
+import { initWorld, getInteractionType, destroyTileObject, dropItemOnGround, canMoveTo, tryPickupItem, applyWorldUpdate, pickupItemAt, forcePlaceItem } from './world';
 import { initInventory, addItem, syncInventoryWithServer, toggleInventory, handleHotbarKey, resetInventory, isInventoryOpen, getSelectedItem, cycleHotbar } from './inventory';
 import { initUI, showGameScreen, updateOnlineCount, updateRoomList } from './ui';
-import { initNetwork, emitMovement } from './network';
+import { initNetwork, emitMovement, emitWorldUpdate } from './network';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const gameContainer = document.getElementById('game-container') as HTMLDivElement;
@@ -67,14 +67,47 @@ document.addEventListener('DOMContentLoaded', () => {
         onConnect: (id) => setLocalPlayerId(id),
         onOnlineCount: updateOnlineCount,
         onRoomList: updateRoomList,
-        onGameStart: (players) => {
+        onGameStart: (players, worldChanges) => {
             gameState.isOffline = false;
+            // Применяем накопленные изменения мира
+            if (worldChanges) {
+                worldChanges.forEach(update => applyWorldUpdate(update));
+            }
             startGame(players, gameState.localPlayerId);
         },
         onState: (serverPlayers) => {
+            // STATE RECONCILIATION (Согласование состояния)
+            // Мы не просто заменяем игроков, мы проверяем локального игрока.
+            
+            const me = getLocalPlayer();
+            const serverMe = serverPlayers[gameState.localPlayerId];
+
+            if (me && serverMe) {
+                // Синхронизируем инвентарь и статы (они важны с сервера)
+                if (serverMe.inventory) syncInventoryWithServer(serverMe.inventory);
+                if (serverMe.stats) me.stats = serverMe.stats;
+
+                // LOGIC: Rubber Banding (Телепортация при сильном рассинхроне)
+                const dist = Math.sqrt(Math.pow(me.x - serverMe.x, 2) + Math.pow(me.y - serverMe.y, 2));
+                const MAX_TOLERANCE = 100; // Если рассинхрон больше 100px, сервер прав
+                
+                if (dist > MAX_TOLERANCE) {
+                    me.x = serverMe.x;
+                    me.y = serverMe.y;
+                    // Можно добавить эффект "лаг"
+                } else {
+                    // Если рассинхрон маленький, мы игнорируем координаты сервера для своего игрока,
+                    // чтобы движение было плавным (Client Prediction).
+                    // Но мы обновляем координаты ВСЕХ ОСТАЛЬНЫХ игроков.
+                    serverPlayers[gameState.localPlayerId] = me; // Подменяем серверного собой в общем списке
+                }
+            }
+            
             setPlayers(serverPlayers);
-            const me = serverPlayers[gameState.localPlayerId];
-            if (me && me.inventory) syncInventoryWithServer(me.inventory);
+        },
+        onWorldUpdate: (update) => {
+            // Пришло обновление мира от другого игрока (или от нас через сервер)
+            applyWorldUpdate(update);
         },
         onError: (msg) => alert(`Ошибка: ${msg}`)
     });
@@ -129,6 +162,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const me = initialPlayers[playerId];
         if (me && me.inventory) syncInventoryWithServer(me.inventory);
 
+        // В онлайн режиме карта уже частично синхронизирована через worldUpdates,
+        // но базовая генерация должна совпадать по сиду.
         initWorld(me.x, me.y);
         showGameScreen();
         resizeCanvas();
@@ -148,7 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
             inventory: [],
             // Убрана начальная броня
             equipment: { head: null, body: null, legs: null },
-            // Инициализация статов (ВСЕ ПО 20, КРОМЕ XP)
+            // Инициализация статов
             stats: {
                 hp: 20, maxHp: 20,
                 hunger: 20, maxHunger: 20,
@@ -184,10 +219,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const worldY = (inputState.mouseY - screenCY) / zoom + me.y;
         
         // 1. Попытка поднять предмет (ПРИОРИТЕТ)
-        const itemType = tryPickupItem(worldX, worldY);
-        if (itemType) {
-            addItem(itemType, 1);
-            addFloatingText(worldX, worldY - 20, `+1 ${itemType}`, '#4ade80');
+        // Предварительная проверка
+        const pickupType = tryPickupItem(worldX, worldY);
+        if (pickupType) {
+            // Фактическое действие
+            const tileX = Math.floor(worldX / TILE_SIZE);
+            const tileY = Math.floor(worldY / TILE_SIZE);
+            const item = pickupItemAt(tileX, tileY);
+            
+            if (item) {
+                addItem(item, 1);
+                addFloatingText(worldX, worldY - 20, `+1 ${item}`, '#4ade80');
+                
+                // СЕТЕВАЯ СИНХРОНИЗАЦИЯ: Поднятие предмета
+                if (!gameState.isOffline) {
+                    emitWorldUpdate({ x: tileX, y: tileY, action: 'pickup_item' });
+                }
+            }
             return; 
         }
 
@@ -240,12 +288,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const tileWorldX = targetTileX * TILE_SIZE + TILE_SIZE/2;
         const tileWorldY = targetTileY * TILE_SIZE + TILE_SIZE/2;
+        
+        // Функция для дропа с синхронизацией
+        const syncDrop = (tX: number, tY: number, iType: string) => {
+            // Сначала пытаемся разместить локально (для предсказания)
+            // Но world.ts теперь требует явной логики.
+            // Упрощение: используем forcePlaceItem или dropItemOnGround локально, 
+            // а серверу шлем place_item
+            dropItemOnGround(tX, tY, iType); 
+            if (!gameState.isOffline) {
+                // При дропе на землю точные координаты "вокруг" сложнее синхронизировать идеально 
+                // без сложной логики. Для простоты шлем обновление на КОНКРЕТНЫЙ тайл.
+                emitWorldUpdate({ x: tX, y: tY, action: 'place_item', data: iType });
+            }
+        };
+        
+        // Функция разрушения с синхронизацией
+        const syncDestroy = (tX: number, tY: number) => {
+            destroyTileObject(tX, tY);
+            if (!gameState.isOffline) {
+                emitWorldUpdate({ x: tX, y: tY, action: 'destroy_object' });
+            }
+        };
 
         if (objectType === 'high_grass') {
-            destroyTileObject(targetTileX, targetTileY);
+            syncDestroy(targetTileX, targetTileY);
             if (Math.random() < 0.3) {
                  const drop = Math.random() > 0.5 ? 'stick' : 'pebble';
-                 dropItemOnGround(targetTileX, targetTileY, drop); // Падает на землю тайла
+                 syncDrop(targetTileX, targetTileY, drop);
                  addFloatingText(tileWorldX, tileWorldY - 20, `Drop: ${drop}`, '#fff');
             }
         }
@@ -254,14 +324,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 addItem('bark', 1);
                 addFloatingText(tileWorldX, tileWorldY - 40, "+1 Bark", '#d97706');
             } else if (activeType === 'stone_axe') {
-                destroyTileObject(targetTileX, targetTileY);
+                syncDestroy(targetTileX, targetTileY);
                 addItem('wood', 2);
                 addFloatingText(tileWorldX, tileWorldY - 40, "+2 Logs", '#fff');
             }
         }
         else if (objectType === 'stone') {
             if (TIER_1_TOOLS.includes(activeType)) {
-                destroyTileObject(targetTileX, targetTileY);
+                syncDestroy(targetTileX, targetTileY);
                 addItem('rock', 1);
                 addFloatingText(tileWorldX, tileWorldY - 20, "+1 Rock", '#94a3b8');
             }
@@ -289,31 +359,23 @@ document.addEventListener('DOMContentLoaded', () => {
             handleMiningLogic(me);
 
             // --- РАСЧЕТ СКОРОСТИ ---
-            // 1. Управление энергией
             let canSprint = false;
             if (me.stats) {
-                // Если пытаемся бежать
                 if (movement.sprint && me.stats.energy > 0) {
                     canSprint = true;
-                    me.stats.energy -= 0.2; // Тратим энергию (медленнее для 20 единиц)
+                    me.stats.energy -= 0.2; 
                     if (me.stats.energy < 0) me.stats.energy = 0;
                 } else if (!movement.sprint) {
-                    // Если не бежим, восстанавливаем энергию
                     if (me.stats.energy < me.stats.maxEnergy) {
                         me.stats.energy += 0.1;
                     }
                 }
             }
 
-            // 2. Базовая скорость
             let currentSpeed = canSprint ? SPRINT_SPEED : WALK_SPEED;
-            
-            // 3. Модификаторы местности
             const tileX = Math.floor(me.x / TILE_SIZE);
             const tileY = Math.floor(me.y / TILE_SIZE);
             const currentTileData = getInteractionType(tileX, tileY); 
-            
-            // В воде скорость делится на 2 (и шаг, и бег)
             if (currentTileData === 'water') {
                 currentSpeed *= 0.5;
             }
@@ -327,40 +389,38 @@ document.addEventListener('DOMContentLoaded', () => {
             if (movement.left) { dx -= currentSpeed; newDir = 'left'; }
             if (movement.right) { dx += currentSpeed; newDir = 'right'; }
             
+            // --- CLIENT-SIDE PREDICTION ---
+            // Мы двигаем игрока ЛОКАЛЬНО всегда, независимо от сервера.
             if (dx !== 0 || dy !== 0) { 
                 me.direction = newDir; 
                 (window as any).isLocalMoving = true; 
-            } else { 
-                (window as any).isLocalMoving = false; 
-            }
-            
-            if (gameState.isOffline) { 
-                // Sliding Movement Logic
                 
-                // 1. Проверяем движение по X
+                // Проверка коллизий локально
                 if (dx !== 0 && canMoveTo(me.x + dx, me.y, PLAYER_RADIUS * 2, PLAYER_RADIUS * 2)) {
                     me.x += dx;
                 }
-                
-                // 2. Проверяем движение по Y
                 if (dy !== 0 && canMoveTo(me.x, me.y + dy, PLAYER_RADIUS * 2, PLAYER_RADIUS * 2)) {
                     me.y += dy;
                 }
             } else { 
+                (window as any).isLocalMoving = false; 
+            }
+            
+            if (!gameState.isOffline) { 
+                // Отправляем инпуты на сервер. Сервер проверит их и вернет "авторитетную" позицию.
+                // Если мы слишком сильно отклонились, onState нас поправит.
                 const filteredMovement = { ...movement, sprint: canSprint }; 
                 emitMovement(filteredMovement);
             }
 
             // --- ОБНОВЛЕНИЕ HUD ---
             if (me.stats) {
-                // Обновляем ширину полосок
                 if (hudEls.hp) hudEls.hp.style.width = `${(me.stats.hp / me.stats.maxHp) * 100}%`;
                 if (hudEls.hunger) hudEls.hunger.style.width = `${(me.stats.hunger / me.stats.maxHunger) * 100}%`;
                 if (hudEls.mana) hudEls.mana.style.width = `${(me.stats.mana / me.stats.maxMana) * 100}%`;
                 if (hudEls.energy) hudEls.energy.style.width = `${(me.stats.energy / me.stats.maxEnergy) * 100}%`;
                 if (hudEls.xp) hudEls.xp.style.width = `${(me.stats.xp / me.stats.maxXp) * 100}%`;
                 
-                // Обновляем текст (округляем до целого)
                 if (hudEls.textHp) hudEls.textHp.textContent = String(Math.floor(me.stats.hp));
                 if (hudEls.textHunger) hudEls.textHunger.textContent = String(Math.floor(me.stats.hunger));
                 if (hudEls.textMana) hudEls.textMana.textContent = String(Math.floor(me.stats.mana));
@@ -370,8 +430,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         
-        // Передаем флаг спринта (movement.sprint) и реальную возможность бежать (me.stats.energy > 0)
-        // Но для камеры используем просто намерение игрока или факт бега
         const isSprintingEffective = movement.sprint && me?.stats && me.stats.energy > 0;
         
         renderGame(currentMiningProgress, currentMiningTargetX, currentMiningTargetY, !!isSprintingEffective);

@@ -1,6 +1,6 @@
 
 // world.ts: Управление данными карты и коллизиями
-import { WorldMap, TileData } from './types';
+import { WorldMap, TileData, WorldUpdate } from './types';
 import { TILE_SIZE } from './constants';
 import { gameState } from './state';
 
@@ -109,11 +109,30 @@ export function destroyTileObject(tileX: number, tileY: number) {
     const key = `${tileX},${tileY}`;
     if (!world[key]) world[key] = { terrain: 'grass', object: 'none', items: [] };
     
-    const oldObj = world[key].object;
-    world[key].object = 'none';
+    // Если объект есть, удаляем его
+    if (world[key].object !== 'none') {
+        world[key].object = 'none';
+        // Возвращать тестовый объект больше не нужно для синхронизации,
+        // но можно оставить для оффлайн режима, если хочется
+    }
+}
 
-    if (gameState.useTestWorld && oldObj !== 'none') {
-        setTimeout(() => { if (world[key]) world[key].object = oldObj; }, 10000); 
+// Применение обновлений из сети
+export function applyWorldUpdate(update: WorldUpdate) {
+    const { x, y, action, data } = update;
+    const key = `${x},${y}`;
+    
+    // Убедимся, что тайл существует в памяти, если нет - создадим "пустышку",
+    // которая наложится на процедурную генерацию при рендере
+    if (!world[key]) world[key] = { terrain: 'grass', object: 'none', items: [] };
+
+    if (action === 'destroy_object') {
+        world[key].object = 'none';
+    } else if (action === 'place_item' && data) {
+        world[key].items.push(data);
+    } else if (action === 'pickup_item') {
+        // Удаляем последний предмет
+        world[key].items.pop();
     }
 }
 
@@ -122,12 +141,25 @@ export function tryPickupItem(worldX: number, worldY: number): string | null {
     const tileY = Math.floor(worldY / TILE_SIZE);
     const key = `${tileX},${tileY}`;
     const tile = world[key];
-    if (tile && tile.items.length > 0) return tile.items.pop() || null;
+    if (tile && tile.items.length > 0) return tile.items[tile.items.length - 1]; // Не удаляем сразу (нужна синхронизация)
+    return null;
+}
+
+// Функция для фактического удаления предмета (после проверки)
+export function pickupItemAt(tileX: number, tileY: number): string | null {
+    const key = `${tileX},${tileY}`;
+    const tile = world[key];
+    if (tile && tile.items.length > 0) {
+        return tile.items.pop() || null;
+    }
     return null;
 }
 
 export function dropItemOnGround(originX: number, originY: number, itemType: string) {
+    // В оффлайне или для предсказания мы пытаемся найти место
     if (tryPlaceItemAt(originX, originY, itemType)) return;
+    
+    // Ищем соседей
     const neighbors = [
         {dx: 0, dy: -1}, {dx: 1, dy: -1}, {dx: 1, dy: 0}, {dx: 1, dy: 1},
         {dx: 0, dy: 1}, {dx: -1, dy: 1}, {dx: -1, dy: 0}, {dx: -1, dy: -1}
@@ -144,12 +176,15 @@ function tryPlaceItemAt(tileX: number, tileY: number, itemType: string): boolean
     if (data.object !== 'none' && data.object !== 'high_grass') return false;
     if (data.terrain === 'water') return false;
     if (data.items.length > 0) return false;
+    
+    // Place logic moved to calling function or applyWorldUpdate mostly, 
+    // but for local prediction we keep it:
     if (!world[key]) world[key] = { terrain: 'grass', object: 'none', items: [] };
     world[key].items.push(itemType);
     return true;
 }
 
-function forcePlaceItem(tileX: number, tileY: number, itemType: string) {
+export function forcePlaceItem(tileX: number, tileY: number, itemType: string) {
     const key = `${tileX},${tileY}`;
     if (!world[key]) world[key] = { terrain: 'grass', object: 'none', items: [] };
     world[key].items.push(itemType);
@@ -189,10 +224,9 @@ function generateBiomedWorld(playerX: number, playerY: number) {
     const playerTileX = Math.floor(playerX / TILE_SIZE);
     const playerTileY = Math.floor(playerY / TILE_SIZE);
     
-    // Радиус генерации (50 тайлов в каждую сторону = 100x100)
+    // Радиус генерации
     const RADIUS = 50; 
     
-    // Инициализируем генераторы шума с сидом из настроек
     const seed = gameState.worldSeed;
     const elevationGen = new Noise2D(seed + "_elevation");
     const moistureGen = new Noise2D(seed + "_moisture");
@@ -203,54 +237,37 @@ function generateBiomedWorld(playerX: number, playerY: number) {
             const key = `${x},${y}`;
             const tile: TileData = { terrain: 'grass', object: 'none', items: [] };
 
-            // 1. Безопасная зона спавна (радиус 3)
             const dist = Math.sqrt(Math.pow(playerTileX - x, 2) + Math.pow(playerTileY - y, 2));
             if (dist < 3) {
                 world[key] = tile;
                 continue;
             }
 
-            // 2. Генерация карты высот и влажности
             const scale = 0.08; 
             const elev = elevationGen.get(x * scale, y * scale);
             const moist = moistureGen.get(x * scale, y * scale);
             const rnd = objectGen.get(x * 0.5, y * 0.5); 
 
-            // --- БИОМЫ ---
-
-            // ВОДА (Озера)
             if (elev < 0.35) {
                 tile.terrain = 'water';
             } else {
-                // СУША
-                
-                // ЛЕС (Forest)
                 if (moist > 0.55) {
-                    // ПРАВИЛО ПРОХОДИМОСТИ:
-                    // Деревья растут ТОЛЬКО на четных координатах (через 1 блок).
-                    // Это гарантирует сетку проходов.
                     const isSpacingValid = (Math.abs(x) % 2 === 0) && (Math.abs(y) % 2 === 0);
-
                     if (isSpacingValid && rnd > 0.25) { 
                         tile.object = 'tree';
                         if (rnd > 0.8) tile.items.push('stick');
                     } else if (rnd > 0.1) {
-                        // В промежутках сажаем траву, чтобы лес не был пустым
                         tile.object = 'high_grass';
                     }
                 } 
-                // РЕДКОЛЕСЬЕ (Plains)
                 else if (moist > 0.3) {
-                    // Здесь тоже применяем spacing, но с меньшим шансом спавна
                     const isSpacingValid = (Math.abs(x) % 2 === 0) && (Math.abs(y) % 2 === 0);
-                    
                     if (isSpacingValid && rnd > 0.75) {
                         tile.object = 'tree';
                     } else if (rnd > 0.4) {
                         tile.object = 'high_grass';
                     }
                 }
-                // ПУСТЫРЬ (Rocky / Dry)
                 else {
                     if (rnd > 0.85) {
                         tile.object = 'stone';
@@ -258,7 +275,6 @@ function generateBiomedWorld(playerX: number, playerY: number) {
                     }
                 }
             }
-
             world[key] = tile;
         }
     }
@@ -278,7 +294,6 @@ export function canMoveTo(x: number, y: number, width: number, height: number): 
         const tileX = Math.floor(corner.x / TILE_SIZE);
         const tileY = Math.floor(corner.y / TILE_SIZE);
         const data = getTileData(tileX, tileY);
-        // Теперь камень не блокирует проход, только дерево
         if (data.object === 'tree') return false;
     }
     return true;

@@ -1,6 +1,6 @@
 
 // network.ts: Управление сетевым соединением
-import { Players, RoomInfo } from './types';
+import { Players, RoomInfo, WorldUpdate } from './types';
 
 interface Socket {
   id: string;
@@ -17,16 +17,18 @@ export let socket: Socket | null = null;
 let onConnectCb: (id: string) => void = () => {};
 let onOnlineCountCb: (count: number) => void = () => {};
 let onRoomListCb: (rooms: RoomInfo[]) => void = () => {};
-let onGameStartCb: (players: Players) => void = () => {};
+let onGameStartCb: (players: Players, worldChanges: WorldUpdate[]) => void = () => {};
 let onStateCb: (players: Players) => void = () => {};
+let onWorldUpdateCb: (update: WorldUpdate) => void = () => {};
 let onErrorCb: (msg: string) => void = () => {};
 
 export function initNetwork(callbacks: {
     onConnect: (id: string) => void,
     onOnlineCount: (count: number) => void,
     onRoomList: (rooms: RoomInfo[]) => void,
-    onGameStart: (players: Players) => void,
+    onGameStart: (players: Players, worldChanges: WorldUpdate[]) => void,
     onState: (players: Players) => void,
+    onWorldUpdate: (update: WorldUpdate) => void,
     onError: (msg: string) => void
 }) {
     onConnectCb = callbacks.onConnect;
@@ -34,6 +36,7 @@ export function initNetwork(callbacks: {
     onRoomListCb = callbacks.onRoomList;
     onGameStartCb = callbacks.onGameStart;
     onStateCb = callbacks.onState;
+    onWorldUpdateCb = callbacks.onWorldUpdate;
     onErrorCb = callbacks.onError;
 }
 
@@ -45,6 +48,7 @@ export function connectToServer() {
     socket.on('roomList', onRoomListCb);
     socket.on('gameStart', onGameStartCb);
     socket.on('state', onStateCb);
+    socket.on('worldUpdate', onWorldUpdateCb);
     socket.on('error', onErrorCb);
 }
 
@@ -65,4 +69,8 @@ export function emitJoinRoom(roomId: string, nickname: string) {
 
 export function emitMovement(movement: any) {
     socket?.emit('movement', movement);
+}
+
+export function emitWorldUpdate(update: WorldUpdate) {
+    socket?.emit('worldUpdate', update);
 }

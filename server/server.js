@@ -23,7 +23,7 @@ app.get('/', (req, res) => {
 });
 
 // Глобальные переменные
-const rooms = {}; // { roomId: { id, name, players: {} } }
+const rooms = {}; // { roomId: { id, name, players: {}, worldChanges: [] } }
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 600;
 
@@ -59,7 +59,8 @@ io.on('connection', (socket) => {
     rooms[roomId] = {
       id: roomId,
       name: name,
-      players: {}
+      players: {},
+      worldChanges: [] // Храним изменения мира (дельта)
     };
 
     joinRoom(socket, roomId, nickname);
@@ -77,21 +78,36 @@ io.on('connection', (socket) => {
   });
 
   socket.on('movement', (movement) => {
-    // Находим комнату, в которой находится игрок
+    // Находим комнату
     const roomId = Array.from(socket.rooms).find(r => rooms[r]);
     
     if (roomId && rooms[roomId] && rooms[roomId].players[socket.id]) {
       const player = rooms[roomId].players[socket.id];
-      
-      // Определяем скорость на основе флага спринта
       const currentSpeed = movement.sprint ? SPRINT_SPEED : WALK_SPEED;
       
+      // Сервер все еще считает физику, чтобы иметь "авторитетное" состояние
       if (movement.left) { player.x -= currentSpeed; player.direction = 'left'; }
       if (movement.up) { player.y -= currentSpeed; player.direction = 'back'; }
       if (movement.right) { player.x += currentSpeed; player.direction = 'right'; }
       if (movement.down) { player.y += currentSpeed; player.direction = 'front'; }
+    }
+  });
 
-      // Ограничения мира сервера остаются простыми
+  // Обработка изменений мира
+  socket.on('worldUpdate', (update) => {
+    const roomId = Array.from(socket.rooms).find(r => rooms[r]);
+    if (roomId && rooms[roomId]) {
+        // Сохраняем изменение в истории комнаты (чтобы новые игроки получили актуальный мир)
+        rooms[roomId].worldChanges.push(update);
+        
+        // Ограничиваем историю изменений (опционально, чтобы память не текла вечно)
+        if (rooms[roomId].worldChanges.length > 5000) {
+            rooms[roomId].worldChanges.shift();
+        }
+
+        // Рассылаем всем в комнате, включая отправителя (или кроме, но проще всем для надежности, хотя клиент уже применил)
+        // Но лучше: socket.to(roomId).emit(...) - всем КРОМЕ отправителя, т.к. отправитель уже применил
+        socket.to(roomId).emit('worldUpdate', update);
     }
   });
 
@@ -99,16 +115,14 @@ io.on('connection', (socket) => {
     console.log('User disconnected:', socket.id);
     io.emit('onlineCount', io.engine.clientsCount);
     
-    // Ищем, в какой комнате был игрок, и удаляем его
     for (const roomId in rooms) {
       if (rooms[roomId].players[socket.id]) {
         delete rooms[roomId].players[socket.id];
         
-        // Если комната пуста, удаляем её
         if (Object.keys(rooms[roomId].players).length === 0) {
           delete rooms[roomId];
         }
-        break; // Игрок может быть только в одной комнате
+        break; 
       }
     }
     
@@ -117,7 +131,7 @@ io.on('connection', (socket) => {
 });
 
 function joinRoom(socket, roomId, nickname) {
-  socket.join(roomId); // Вступаем в комнату Socket.io
+  socket.join(roomId); 
   
   // Создаем игрока
   rooms[roomId].players[socket.id] = {
@@ -127,9 +141,8 @@ function joinRoom(socket, roomId, nickname) {
     id: socket.id,
     nickname: nickname || "Player",
     direction: 'front', 
-    inventory: [], // Инициализируем пустым массивом для совместимости с новой системой
+    inventory: [], 
     equipment: { head: null, body: null, legs: null },
-    // Базовая инициализация статов для онлайн-игры (ВСЕ ПО 20)
     stats: {
         hp: 20, maxHp: 20,
         hunger: 20, maxHunger: 20,
@@ -140,13 +153,12 @@ function joinRoom(socket, roomId, nickname) {
     }
   };
 
-  // Сообщаем клиенту, что игра началась
-  socket.emit('gameStart', rooms[roomId].players);
+  // Отправляем игроку список игроков И историю изменений мира
+  socket.emit('gameStart', rooms[roomId].players, rooms[roomId].worldChanges);
 }
 
 // Игровой цикл сервера
 setInterval(() => {
-  // Проходим по всем комнатам и рассылаем состояние только внутри них
   for (const roomId in rooms) {
     io.to(roomId).emit('state', rooms[roomId].players);
   }

@@ -72,3 +72,11 @@ export interface Movement {
   right: boolean;
   sprint: boolean; // Флаг спринта
 }
+
+// Тип обновления мира для синхронизации
+export interface WorldUpdate {
+    x: number;
+    y: number;
+    action: 'destroy_object' | 'place_item' | 'pickup_item';
+    data?: string; // Например, тип предмета
+}
