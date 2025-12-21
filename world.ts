@@ -62,8 +62,7 @@ class Noise2D {
     private fade(t: number) { return t * t * t * (t * (t * 6 - 15) + 10); }
     private lerp(t: number, a: number, b: number) { return a + t * (b - a); }
 
-    // Возвращает значение примерно от -1 до 1 (но Value Noise обычно 0..1 или -1..1 в зависимости от реализации)
-    // Эта реализация возвращает 0..1
+    // Возвращает значение примерно от 0 до 1
     get(x: number, y: number): number {
         const X = Math.floor(x) & 255;
         const Y = Math.floor(y) & 255;
@@ -72,14 +71,11 @@ class Noise2D {
         const u = this.fade(x);
         const v = this.fade(y);
         
-        // Хэширование углов квадрата
         const aa = this.perm[this.perm[X] + Y];
         const ab = this.perm[this.perm[X] + Y + 1];
         const ba = this.perm[this.perm[X+1] + Y];
         const bb = this.perm[this.perm[X+1] + Y + 1];
 
-        // Интерполяция (Value Noise style using pseudo-gradients for simple look)
-        // Для простоты здесь используем просто значения из таблицы перестановок нормализованные
         const val = (h: number) => (h % 256) / 255.0;
 
         const res = this.lerp(v, 
@@ -112,8 +108,6 @@ export function destroyTileObject(tileX: number, tileY: number) {
     // Если объект есть, удаляем его
     if (world[key].object !== 'none') {
         world[key].object = 'none';
-        // Возвращать тестовый объект больше не нужно для синхронизации,
-        // но можно оставить для оффлайн режима, если хочется
     }
 }
 
@@ -122,8 +116,6 @@ export function applyWorldUpdate(update: WorldUpdate) {
     const { x, y, action, data } = update;
     const key = `${x},${y}`;
     
-    // Убедимся, что тайл существует в памяти, если нет - создадим "пустышку",
-    // которая наложится на процедурную генерацию при рендере
     if (!world[key]) world[key] = { terrain: 'grass', object: 'none', items: [] };
 
     if (action === 'destroy_object') {
@@ -131,7 +123,6 @@ export function applyWorldUpdate(update: WorldUpdate) {
     } else if (action === 'place_item' && data) {
         world[key].items.push(data);
     } else if (action === 'pickup_item') {
-        // Удаляем последний предмет
         world[key].items.pop();
     }
 }
@@ -141,11 +132,10 @@ export function tryPickupItem(worldX: number, worldY: number): string | null {
     const tileY = Math.floor(worldY / TILE_SIZE);
     const key = `${tileX},${tileY}`;
     const tile = world[key];
-    if (tile && tile.items.length > 0) return tile.items[tile.items.length - 1]; // Не удаляем сразу (нужна синхронизация)
+    if (tile && tile.items.length > 0) return tile.items[tile.items.length - 1]; 
     return null;
 }
 
-// Функция для фактического удаления предмета (после проверки)
 export function pickupItemAt(tileX: number, tileY: number): string | null {
     const key = `${tileX},${tileY}`;
     const tile = world[key];
@@ -156,10 +146,8 @@ export function pickupItemAt(tileX: number, tileY: number): string | null {
 }
 
 export function dropItemOnGround(originX: number, originY: number, itemType: string) {
-    // В оффлайне или для предсказания мы пытаемся найти место
     if (tryPlaceItemAt(originX, originY, itemType)) return;
     
-    // Ищем соседей
     const neighbors = [
         {dx: 0, dy: -1}, {dx: 1, dy: -1}, {dx: 1, dy: 0}, {dx: 1, dy: 1},
         {dx: 0, dy: 1}, {dx: -1, dy: 1}, {dx: -1, dy: 0}, {dx: -1, dy: -1}
@@ -177,8 +165,6 @@ function tryPlaceItemAt(tileX: number, tileY: number, itemType: string): boolean
     if (data.terrain === 'water') return false;
     if (data.items.length > 0) return false;
     
-    // Place logic moved to calling function or applyWorldUpdate mostly, 
-    // but for local prediction we keep it:
     if (!world[key]) world[key] = { terrain: 'grass', object: 'none', items: [] };
     world[key].items.push(itemType);
     return true;
@@ -224,7 +210,7 @@ function generateBiomedWorld(playerX: number, playerY: number) {
     const playerTileX = Math.floor(playerX / TILE_SIZE);
     const playerTileY = Math.floor(playerY / TILE_SIZE);
     
-    // Радиус генерации
+    // Радиус генерации (вокруг игрока)
     const RADIUS = 50; 
     
     const seed = gameState.worldSeed;
@@ -237,8 +223,10 @@ function generateBiomedWorld(playerX: number, playerY: number) {
             const key = `${x},${y}`;
             const tile: TileData = { terrain: 'grass', object: 'none', items: [] };
 
-            const dist = Math.sqrt(Math.pow(playerTileX - x, 2) + Math.pow(playerTileY - y, 2));
-            if (dist < 3) {
+            // ИСПРАВЛЕНИЕ: Безопасная зона теперь в центре мира (0,0), а не вокруг игрока.
+            // Это гарантирует, что сервер и клиент видят одинаковые деревья, независимо от того, где спавнится игрок.
+            const distFromCenter = Math.sqrt(x*x + y*y);
+            if (distFromCenter < 5) { // 5 тайлов от (0,0) чисто
                 world[key] = tile;
                 continue;
             }
@@ -281,6 +269,7 @@ function generateBiomedWorld(playerX: number, playerY: number) {
 }
 
 export function canMoveTo(x: number, y: number, width: number, height: number): boolean {
+    // ВАЖНО: Эти параметры должны совпадать с сервером
     const padding = 15; 
     const checkWidth = width - padding;
     const checkHeight = height - padding;

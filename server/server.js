@@ -115,11 +115,13 @@ function isColliding(roomId, worldX, worldY) {
     const tileX = Math.floor(worldX / TILE_SIZE);
     const tileY = Math.floor(worldY / TILE_SIZE);
     
-    // Проверяем историю изменений: если объект здесь уничтожен, то коллизии нет
-    // Это упрощенная проверка. В идеале нужно хранить актуальное состояние карты в памяти сервера,
-    // если карта большая. Для MVP мы проверим последние изменения.
+    // Проверяем историю изменений
     const destroyed = room.worldChanges.some(u => u.x === tileX && u.y === tileY && u.action === 'destroy_object');
     if (destroyed) return false;
+
+    // СИНХРОНИЗАЦИЯ: Безопасная зона (0,0)
+    const distFromCenter = Math.sqrt(tileX*tileX + tileY*tileY);
+    if (distFromCenter < 5) return false;
 
     // Генерируем тайл
     const gens = getNoiseGenerators(roomId, room.seed);
@@ -131,9 +133,7 @@ function isColliding(roomId, worldX, worldY) {
     let object = 'none';
 
     if (elev < 0.35) {
-        // Вода (сейчас считаем непроходимой для простоты сервера, или замедляющей)
-        // Если хочешь плавать - убери return true
-        // return true; 
+        // Вода
     } else {
         if (moist > 0.55) {
             const isSpacingValid = (Math.abs(tileX) % 2 === 0) && (Math.abs(tileY) % 2 === 0);
@@ -150,9 +150,6 @@ function isColliding(roomId, worldX, worldY) {
 
     if (object === 'tree') return true;
     
-    // Для камней можно сделать коллизию, если хочешь:
-    // if (object === 'stone') return true; 
-
     return false;
 }
 
@@ -161,11 +158,17 @@ function canMoveTo(roomId, x, y) {
     const width = 32; // Ширина хитбокса игрока
     const height = 32;
     
+    // ВАЖНО: Добавлен padding, чтобы соответствовать клиенту
+    // Это делает хитбокс "худее" (17px вместо 32px), позволяя проходить между деревьями так же, как на клиенте
+    const padding = 15; 
+    const checkWidth = width - padding;
+    const checkHeight = height - padding;
+
     const corners = [
-        { x: x - width / 2, y: y - height / 2 + 10 },
-        { x: x + width / 2, y: y - height / 2 + 10 },
-        { x: x - width / 2, y: y + height / 2 },
-        { x: x + width / 2, y: y + height / 2 }
+        { x: x - checkWidth / 2, y: y - checkHeight / 2 + 10 },
+        { x: x + checkWidth / 2, y: y - checkHeight / 2 + 10 },
+        { x: x - checkWidth / 2, y: y + checkHeight / 2 },
+        { x: x + checkWidth / 2, y: y + checkHeight / 2 }
     ];
 
     for (const corner of corners) {
@@ -239,7 +242,7 @@ io.on('connection', (socket) => {
       if (movement.down) { nextY += currentSpeed; player.direction = 'front'; }
 
       // ВАЖНО: Сервер проверяет коллизию перед движением!
-      // Проверяем отдельно X и Y для скольжения вдоль стен
+      // Используем ту же логику скольжения, что и на клиенте
       if (canMoveTo(roomId, nextX, player.y)) {
           player.x = nextX;
       }
