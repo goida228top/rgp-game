@@ -18,7 +18,7 @@ let onConnectCb: (id: string) => void = () => {};
 let onOnlineCountCb: (count: number) => void = () => {};
 let onRoomListCb: (rooms: RoomInfo[]) => void = () => {};
 let onGameStartCb: (players: Players, worldChanges: WorldUpdate[], seed?: string) => void = () => {};
-let onStateCb: (players: Players) => void = () => {};
+let onStateCb: (players: Players, worldTime?: number) => void = () => {};
 let onWorldUpdateCb: (update: WorldUpdate) => void = () => {};
 let onErrorCb: (msg: string) => void = () => {};
 let onDebugLogCb: (msg: string) => void = () => {};
@@ -30,7 +30,7 @@ export function initNetwork(callbacks: {
     onOnlineCount: (count: number) => void,
     onRoomList: (rooms: RoomInfo[]) => void,
     onGameStart: (players: Players, worldChanges: WorldUpdate[], seed?: string) => void,
-    onState: (players: Players) => void,
+    onState: (players: Players, worldTime?: number) => void,
     onWorldUpdate: (update: WorldUpdate) => void,
     onError: (msg: string) => void,
     onDebugLog?: (msg: string) => void,
@@ -54,10 +54,10 @@ export function connectToServer() {
     socket.on('onlineCount', onOnlineCountCb);
     socket.on('roomList', onRoomListCb);
     socket.on('gameStart', onGameStartCb);
-    socket.on('state', onStateCb);
+    socket.on('state', (players, worldTime) => onStateCb(players, worldTime));
     socket.on('worldUpdate', onWorldUpdateCb);
     socket.on('error', onErrorCb);
-    socket.on('debugLog', onDebugLogCb); // Ловим дебаг сообщения
+    socket.on('debugLog', onDebugLogCb);
     socket.on('chatMessage', onChatMessageCb);
 }
 

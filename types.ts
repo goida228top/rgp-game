@@ -1,17 +1,22 @@
-
 // types.ts: Определяет общие типы данных для всего приложения.
 
 export type TerrainType = 'grass' | 'water';
-export type ObjectType = 'tree' | 'stone' | 'high_grass' | 'none';
+// Удален floor_wood из ObjectType, так как теперь это отдельный слой
+export type ObjectType = 'tree' | 'stone' | 'big_rock' | 'high_grass' | 'none' | 'workbench' | 
+                         'wall_wood_t' | 'wall_wood_b' | 'wall_wood_l' | 'wall_wood_r' | 
+                         'door_wood_t' | 'door_wood_b' | 'door_wood_l' | 'door_wood_r' | 'gemi';
 
 export type Direction = 'front' | 'back' | 'left' | 'right';
 
-// Новая структура данных тайла
-// Это ОЧЕНЬ легко сохранять: просто массив таких объектов
+// Тип для кадров анимации (0 - стоит, 1 и 2 - шаги)
+export type AnimFrame = 0 | 1 | 2;
+
+// Новая структура данных тайла с тремя слоями
 export interface TileData {
-    terrain: TerrainType;   // Базовый слой (по чему ходим)
-    object: ObjectType;     // Слой препятствий (что ломаем/обходим)
-    items: string[];        // Слой лута (массив ID предметов: ['stick', 'rock'])
+    terrain: TerrainType;   // Базовый слой (трава/вода)
+    floor: 'none' | 'wood'; // Слой покрытия (фанера)
+    object: ObjectType;     // Слой препятствий
+    items: string[];        // Слой лута
 }
 
 // Карта - это словарь координат "x,y" -> Данные тайла
@@ -65,18 +70,18 @@ export interface RoomInfo {
   players: number;
 }
 
-export interface Movement {
-  up: boolean;
-  down: boolean;
-  left: boolean;
-  right: boolean;
-  sprint: boolean; // Флаг спринта
-}
-
-// Тип обновления мира для синхронизации
 export interface WorldUpdate {
     x: number;
     y: number;
-    action: 'destroy_object' | 'place_item' | 'pickup_item';
-    data?: string; // Например, тип предмета
+    action: 'destroy_object' | 'place_item' | 'pickup_item' | 'place_object' | 'place_floor' | 'destroy_floor';
+    data?: string;
+}
+
+export interface Movement {
+    up: boolean;
+    down: boolean;
+    left: boolean;
+    right: boolean;
+    sprint: boolean;
+    rotate: boolean;
 }

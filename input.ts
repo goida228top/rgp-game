@@ -15,7 +15,7 @@ export const inputState = {
  * @returns {Movement} - Объект состояния движения.
  */
 export function initInput(canvas: HTMLCanvasElement): Movement {
-    const movement: Movement = { up: false, down: false, left: false, right: false, sprint: false };
+    const movement: Movement = { up: false, down: false, left: false, right: false, sprint: false, rotate: false };
     
     // Оставляем базовую защиту от закрытия (диалоговое окно), это полезно в любой игре
     window.addEventListener('beforeunload', (e) => {
@@ -29,6 +29,10 @@ export function initInput(canvas: HTMLCanvasElement): Movement {
         // --- СПРИНТ: SHIFT (Зажатие) ---
         if (key === 'shift') {
             movement.sprint = true;
+        }
+        // --- РОТАЦИЯ: R ---
+        if (key === 'r' || key === 'к') {
+            movement.rotate = true;
         }
 
         switch (key) {
@@ -45,6 +49,9 @@ export function initInput(canvas: HTMLCanvasElement): Movement {
         // --- СПРИНТ: SHIFT (Отпускание) ---
         if (key === 'shift') {
             movement.sprint = false;
+        }
+        if (key === 'r' || key === 'к') {
+            movement.rotate = false;
         }
 
          switch (key) {

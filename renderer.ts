@@ -4,227 +4,119 @@ import { TILE_SIZE } from './constants';
 import { Player } from './types';
 import { gameState } from './state';
 import { textures, charSprites, AnimFrame } from './assets';
-import { getTileData, isPositionInWater } from './world';
+import { getTileData, isPositionInWater, canPlaceObject, getInteractionType } from './world';
 import { getSelectedItem } from './inventory';
+import { inputState } from './input';
+import { placementRotation } from './interaction'; 
 
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
 export let cameraZoom = 1.5; 
 
-// --- CAMERA STATE ---
-// Храним текущую позицию камеры отдельно от игрока для плавности
 let camX = 0;
 let camY = 0;
 let isCameraInitialized = false;
 
-// FLOATING TEXT SYSTEM
 interface FloatingText {
-    x: number;
-    y: number;
-    text: string;
-    life: number; // frames
-    maxLife: number;
-    color: string;
+    x: number; y: number; text: string; life: number; maxLife: number; color: string;
 }
 const floatingTexts: FloatingText[] = [];
 
 export function addFloatingText(x: number, y: number, text: string, color: string = '#ffffff') {
-    floatingTexts.push({
-        x, y, text, life: 60, maxLife: 60, color
-    });
+    floatingTexts.push({ x, y, text, life: 60, maxLife: 60, color });
 }
 
-export function getCameraZoom() {
-    return cameraZoom;
-}
+export function getCameraZoom() { return cameraZoom; }
 
 export function initRenderer(canvasEl: HTMLCanvasElement) {
-    canvas = canvasEl;
-    ctx = canvas.getContext('2d');
-    if (ctx) {
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-    }
+    canvas = canvasEl; ctx = canvas.getContext('2d');
+    if (ctx) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; }
 }
 
 export function adjustZoom(deltaY: number) {
-    const sensitivity = 0.001;
-    cameraZoom -= deltaY * sensitivity;
+    cameraZoom -= deltaY * 0.001;
     if (cameraZoom < 0.8) cameraZoom = 0.8;
     if (cameraZoom > 3.0) cameraZoom = 3.0;
 }
 
-// Изменено: теперь принимает isSprinting для ускорения анимации
 function getAnimationFrame(isMoving: boolean, isSprinting: boolean): AnimFrame {
     if (!isMoving) return 0;
-    
-    // Если спринт, анимация в 2 раза быстрее (75мс против 150мс)
     const frameDuration = isSprinting ? 75 : 150;
-    
     const now = Date.now();
     const cycle = Math.floor(now / frameDuration) % 4;
-    if (cycle === 0) return 0;
-    if (cycle === 1) return 1;
-    if (cycle === 2) return 0;
-    return 2;
+    return (cycle === 3) ? 2 : (cycle as AnimFrame);
 }
 
 export function drawCharacterPreview(ctxPreview: CanvasRenderingContext2D, player: Player) {
-    const w = ctxPreview.canvas.width;
-    const h = ctxPreview.canvas.height;
-    ctxPreview.clearRect(0, 0, w, h);
-    ctxPreview.save();
-    ctxPreview.imageSmoothingEnabled = true;
-    ctxPreview.imageSmoothingQuality = 'high';
-    ctxPreview.translate(w/2, h/2);
-    ctxPreview.scale(1.2, 1.2);
-    ctxPreview.translate(-32, -42); 
-    if (charSprites['base'] && charSprites['base'][0]) ctxPreview.drawImage(charSprites['base'][0], 0, 0, 64, 84);
+    const w = ctxPreview.canvas.width; const h = ctxPreview.canvas.height;
+    ctxPreview.clearRect(0, 0, w, h); ctxPreview.save(); ctxPreview.translate(w/2, h/2); ctxPreview.scale(1.2, 1.2); ctxPreview.translate(-32, -42); 
+    if (charSprites['base']) ctxPreview.drawImage(charSprites['base'][0], 0, 0, 64, 84);
     if (player.equipment.legs && charSprites[player.equipment.legs]) ctxPreview.drawImage(charSprites[player.equipment.legs][0], 0, 0, 64, 84);
     if (player.equipment.body && charSprites[player.equipment.body]) ctxPreview.drawImage(charSprites[player.equipment.body][0], 0, 0, 64, 84);
     if (player.equipment.head && charSprites[player.equipment.head]) ctxPreview.drawImage(charSprites[player.equipment.head][0], 0, 0, 64, 84);
     ctxPreview.restore();
 }
 
-// Изменено: принимает isSprinting
 function drawPlayer(ctx: CanvasRenderingContext2D, player: Player, isLocal: boolean, isMoving: boolean, isSprinting: boolean) {
-    // ИСПОЛЬЗУЕМ НОВУЮ ФУНКЦИЮ ДЛЯ ПРОВЕРКИ ВОДЫ
     const isInWater = isPositionInWater(player.x, player.y);
-
-    const x = player.x;
-    let y = player.y;
-    if (isInWater) {
-        const waterBob = Math.sin(Date.now() / 400) * 2;
-        y += 5 + waterBob; 
-    }
-
-    // Передаем спринт в анимацию
+    const x = player.x; let y = player.y;
+    if (isInWater) y += 5 + Math.sin(Date.now() / 400) * 2; 
     const frame = getAnimationFrame(isMoving, isSprinting);
     const dir = player.direction || 'front';
     const isFlipped = dir === 'right';
-
-    ctx.save();
-    ctx.translate(x, y);
-
-    // Никнейм
+    ctx.save(); ctx.translate(x, y);
     if (!isLocal) {
-        ctx.fillStyle = '#FFFFFF';
-        ctx.shadowColor = 'black';
-        ctx.shadowBlur = 4;
-        ctx.font = 'bold 12px "Segoe UI", sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(player.nickname, 0, -55);
-        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#FFFFFF'; ctx.shadowColor = 'black'; ctx.shadowBlur = 4; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(player.nickname, 0, -55); ctx.shadowBlur = 0;
     }
-
-    // Тень
-    if (!isInWater) {
-        ctx.fillStyle = 'rgba(0,0,0,0.25)';
-        ctx.beginPath();
-        ctx.ellipse(0, 12, 16, 6, 0, 0, Math.PI*2); 
-        ctx.fill();
-    } else {
-        const rippleScale = (Math.sin(Date.now() / 500) + 1) / 2;
-        ctx.strokeStyle = `rgba(255, 255, 255, ${0.4 - rippleScale * 0.2})`;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.ellipse(0, 0, 12 + rippleScale * 4, 6 + rippleScale * 2, 0, 0, Math.PI*2);
-        ctx.stroke();
+    if (!isInWater) { ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(0, 12, 16, 6, 0, 0, Math.PI*2); ctx.fill(); }
+    else {
+        const ripple = (Math.sin(Date.now() / 500) + 1) / 2;
+        ctx.strokeStyle = `rgba(255, 255, 255, ${0.4 - ripple * 0.2})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(0, 0, 12 + ripple * 4, 6 + ripple * 2, 0, 0, Math.PI*2); ctx.stroke();
     }
-
     if (isFlipped) ctx.scale(-1, 1);
-    
-    if (isInWater) {
-        ctx.beginPath();
-        ctx.rect(-40, -100, 80, 100);
-        ctx.clip();
-    }
-
+    if (isInWater) { ctx.beginPath(); ctx.rect(-40, -100, 80, 100); ctx.clip(); }
     ctx.translate(-32, -60); 
-
-    const w = 64;
-    const h = 84;
-
-    if (charSprites['base'] && charSprites['base'][frame]) ctx.drawImage(charSprites['base'][frame], 0, 0, w, h);
+    if (charSprites['base'] && charSprites['base'][frame]) ctx.drawImage(charSprites['base'][frame], 0, 0, 64, 84);
     if (player.equipment) {
-        if (player.equipment.legs && charSprites[player.equipment.legs]) ctx.drawImage(charSprites[player.equipment.legs][frame], 0, 0, w, h);
-        if (player.equipment.body && charSprites[player.equipment.body]) ctx.drawImage(charSprites[player.equipment.body][frame], 0, 0, w, h);
-        if (player.equipment.head && charSprites[player.equipment.head]) ctx.drawImage(charSprites[player.equipment.head][frame], 0, 0, w, h);
+        if (player.equipment.legs && charSprites[player.equipment.legs]) ctx.drawImage(charSprites[player.equipment.legs][frame], 0, 0, 64, 84);
+        if (player.equipment.body && charSprites[player.equipment.body]) ctx.drawImage(charSprites[player.equipment.body][frame], 0, 0, 64, 84);
+        if (player.equipment.head && charSprites[player.equipment.head]) ctx.drawImage(charSprites[player.equipment.head][frame], 0, 0, 64, 84);
     }
-
-    // --- ОТРИСОВКА ПРЕДМЕТА НАД ГОЛОВОЙ ---
     if (isLocal) {
         const item = getSelectedItem();
         if (item) {
-            const hoverOffset = Math.sin(Date.now() / 300) * 3;
-            ctx.font = '24px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            if (isFlipped) ctx.scale(-1, 1);
-            ctx.shadowColor = 'rgba(0,0,0,0.5)';
-            ctx.shadowBlur = 10;
-            ctx.fillText(item.icon, 32, -15 + hoverOffset); 
-            ctx.shadowBlur = 0;
-            if (isFlipped) ctx.scale(-1, 1);
+            ctx.font = '24px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; if (isFlipped) ctx.scale(-1, 1);
+            ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 10; ctx.fillText(item.icon, 32, -15 + Math.sin(Date.now() / 300) * 3); ctx.shadowBlur = 0;
         }
     }
-
     ctx.restore();
 }
 
-interface RenderObject {
-    y: number; 
-    type: 'tree' | 'stone' | 'player' | 'ground_item';
-    data: any;
-}
+interface RenderObject { y: number; type: string; data: any; }
 
-// Линейная интерполяция
-function lerp(start: number, end: number, t: number) {
-    return start * (1 - t) + end * t;
-}
+function lerp(start: number, end: number, t: number) { return start * (1 - t) + end * t; }
 
-// Добавлен аргумент isSprinting
 export function renderGame(miningProgress: number = 0, targetX: number = 0, targetY: number = 0, isSprinting: boolean = false) {
   if (!ctx || !canvas) return;
   const me = gameState.players[gameState.localPlayerId];
   if (!me) return;
-
-  // Инициализация камеры при первом старте
-  if (!isCameraInitialized) {
-      camX = me.x;
-      camY = me.y;
-      isCameraInitialized = true;
-  }
-
-  // --- ЛОГИКА ПЛАВНОЙ КАМЕРЫ ---
-  // Если мы бежим (isSprinting), lerpFactor меньше (камера отстает), но теперь 0.08, чтобы не так сильно.
-  // Если идем, lerpFactor побольше (камера успевает).
+  if (!isCameraInitialized) { camX = me.x; camY = me.y; isCameraInitialized = true; }
   const lerpFactor = isSprinting ? 0.08 : 0.15;
-  
-  camX = lerp(camX, me.x, lerpFactor);
-  camY = lerp(camY, me.y, lerpFactor);
-  // ------------------------------
-
+  camX = lerp(camX, me.x, lerpFactor); camY = lerp(camY, me.y, lerpFactor);
   const dpr = window.devicePixelRatio || 1;
-
-  ctx.fillStyle = '#4e8c33'; 
+  
+  // ФОН: Если тестовый мир - белый/серый, иначе зеленый
+  ctx.fillStyle = gameState.useTestWorld ? '#e2e8f0' : '#4e8c33'; 
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-
+  
   ctx.save();
   ctx.scale(dpr, dpr);
-
-  const logicalWidth = canvas.width / dpr;
-  const logicalHeight = canvas.height / dpr;
-
+  const logicalWidth = canvas.width / dpr; const logicalHeight = canvas.height / dpr;
   ctx.translate(logicalWidth / 2, logicalHeight / 2);
   ctx.scale(cameraZoom, cameraZoom);
-  
-  // Используем сглаженные координаты камеры, а не жесткие me.x/me.y
   ctx.translate(-camX, -camY);
 
-  // Используем camX/camY для расчета видимой области
-  const viewW = logicalWidth / cameraZoom;
-  const viewH = logicalHeight / cameraZoom;
+  const viewW = logicalWidth / cameraZoom, viewH = logicalHeight / cameraZoom;
   const startTileX = Math.floor((camX - viewW/2) / TILE_SIZE) - 1;
   const endTileX = Math.floor((camX + viewW/2) / TILE_SIZE) + 2;
   const startTileY = Math.floor((camY - viewH/2) / TILE_SIZE) - 2; 
@@ -234,188 +126,124 @@ export function renderGame(miningProgress: number = 0, targetX: number = 0, targ
 
   for (let x = startTileX; x <= endTileX; x++) {
     for (let y = startTileY; y <= endTileY; y++) {
-        const screenX = x * TILE_SIZE;
-        const screenY = y * TILE_SIZE;
-        
+        const screenX = x * TILE_SIZE, screenY = y * TILE_SIZE;
         const tileData = getTileData(x, y);
         
-        // --- ОТРИСОВКА ЗЕМЛИ И ВОДЫ ---
+        // РЕНДЕРИНГ ПОВЕРХНОСТИ
         if (tileData.terrain === 'water') {
-            // 1. Рисуем базу воды (Сплошной цвет)
             ctx.drawImage(textures['water'], screenX, screenY, TILE_SIZE, TILE_SIZE);
             
-            // 1.1 Рисуем волны (редко, 15% шанс, зависит от координат, чтобы не мерцало при движении камеры)
-            // Простейший псевдо-рандом от координат
+            // --- ЛОГИКА БЕРЕГОВ (СКРУГЛЕНИЯ) ---
+            const isN = getTileData(x, y - 1).terrain === 'grass';
+            const isS = getTileData(x, y + 1).terrain === 'grass';
+            const isW = getTileData(x - 1, y).terrain === 'grass';
+            const isE = getTileData(x + 1, y).terrain === 'grass';
+
+            if (isN && isW) ctx.drawImage(textures['mask_corner_tl'], screenX, screenY, TILE_SIZE, TILE_SIZE);
+            if (isN && isE) ctx.drawImage(textures['mask_corner_tr'], screenX, screenY, TILE_SIZE, TILE_SIZE);
+            if (isS && isW) ctx.drawImage(textures['mask_corner_bl'], screenX, screenY, TILE_SIZE, TILE_SIZE);
+            if (isS && isE) ctx.drawImage(textures['mask_corner_br'], screenX, screenY, TILE_SIZE, TILE_SIZE);
+
             const waveHash = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
-            // Дробная часть от 0 до 1. Если > 0.85, значит рисуем волну (15% шанс)
-            const isWave = (waveHash - Math.floor(waveHash)) > 0.85; 
-
-            if (isWave) {
-                // Анимация: плавает вверх-вниз
-                const waveBob = Math.sin(Date.now() / 500) * 2;
-                ctx.drawImage(textures['water_wave'], screenX, screenY + waveBob, TILE_SIZE, TILE_SIZE);
-            }
-
-            // 2. Сглаживание углов (Autotiling)
-            // Проверяем соседей. Если сосед - НЕ вода, значит это суша.
-            const isTopLand = getTileData(x, y - 1).terrain !== 'water';
-            const isBottomLand = getTileData(x, y + 1).terrain !== 'water';
-            const isLeftLand = getTileData(x - 1, y).terrain !== 'water';
-            const isRightLand = getTileData(x + 1, y).terrain !== 'water';
-
-            // Накладываем маски углов травы поверх воды и волн
-            if (isTopLand && isLeftLand) {
-                ctx.drawImage(textures['mask_corner_tl'], screenX, screenY, TILE_SIZE, TILE_SIZE);
-            }
-            if (isTopLand && isRightLand) {
-                ctx.drawImage(textures['mask_corner_tr'], screenX, screenY, TILE_SIZE, TILE_SIZE);
-            }
-            if (isBottomLand && isLeftLand) {
-                ctx.drawImage(textures['mask_corner_bl'], screenX, screenY, TILE_SIZE, TILE_SIZE);
-            }
-            if (isBottomLand && isRightLand) {
-                ctx.drawImage(textures['mask_corner_br'], screenX, screenY, TILE_SIZE, TILE_SIZE);
-            }
-
-        } else {
+            if ((waveHash - Math.floor(waveHash)) > 0.85) ctx.drawImage(textures['water_wave'], screenX, screenY + Math.sin(Date.now() / 500) * 2, TILE_SIZE, TILE_SIZE);
+        } else if (!gameState.useTestWorld) {
             ctx.drawImage(textures['grass'], screenX, screenY, TILE_SIZE, TILE_SIZE);
         }
+
+        if (tileData.floor === 'wood') ctx.drawImage(textures['floor_wood'], screenX, screenY, TILE_SIZE, TILE_SIZE);
         
-        if (gameState.showDebugGrid) {
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-            ctx.font = '8px monospace';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(`${x},${y}`, screenX + TILE_SIZE/2, screenY + TILE_SIZE/2);
-        }
-
-        if (gameState.useTestWorld && !gameState.showDebugGrid) {
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
-            ctx.lineWidth = 1;
+        if (gameState.showDebugGrid || gameState.useTestWorld) {
+            ctx.strokeStyle = gameState.useTestWorld ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)'; 
             ctx.strokeRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
         }
 
-        if (tileData.object === 'tree') {
-            renderList.push({ y: screenY + TILE_SIZE, type: 'tree', data: { x: screenX - 50, y: screenY - 180 } });
-        } else if (tileData.object === 'stone') {
-            renderList.push({ y: screenY + TILE_SIZE, type: 'stone', data: { x: screenX, y: screenY } });
-        } else if (tileData.object === 'high_grass') {
-            ctx.drawImage(textures['high_grass'], screenX, screenY, TILE_SIZE, TILE_SIZE);
+        if (tileData.object === 'tree') renderList.push({ y: screenY + 35, type: 'tree', data: { x: screenX - 50, y: screenY - 180 } });
+        else if (tileData.object === 'stone') renderList.push({ y: screenY + 30, type: 'stone', data: { x: screenX, y: screenY } });
+        else if (tileData.object === 'big_rock') renderList.push({ y: screenY + 38, type: 'big_rock', data: { x: screenX - 30, y: screenY - 40 } });
+        else if (tileData.object === 'workbench') renderList.push({ y: screenY + 30, type: 'workbench', data: { x: screenX, y: screenY } });
+        else if (tileData.object === 'high_grass') ctx.drawImage(textures['high_grass'], screenX, screenY, TILE_SIZE, TILE_SIZE);
+        else if (tileData.object.startsWith('wall_wood') || tileData.object.startsWith('door_wood')) {
+             let sortY = screenY + TILE_SIZE; if (tileData.object.includes('_t')) sortY = screenY + 10;
+             let angle = 0; if (tileData.object.startsWith('door_wood')) { const k = `${x},${y}`; if (gameState.doorStates[k]) angle = gameState.doorStates[k].angle; }
+             renderList.push({ y: sortY, type: tileData.object.startsWith('door_wood') ? 'door' : 'wall', data: { x: screenX, y: screenY, tex: textures[tileData.object], angle, subType: tileData.object.split('_').pop() } });
         }
-
-        if (tileData.items.length > 0) {
-            tileData.items.forEach((itemType, index) => {
-                let offsetX = TILE_SIZE / 2;
-                let offsetY = TILE_SIZE / 2;
-                let rotation = 0;
-
-                if (!gameState.showDebugGrid) {
-                     const seed = x * 1000 + y + index * 50;
-                     offsetX += Math.sin(seed) * (TILE_SIZE / 4);
-                     offsetY += Math.cos(seed) * (TILE_SIZE / 4);
-                     rotation = Math.sin(seed * 0.1) * Math.PI;
-                }
-
-                renderList.push({ 
-                    y: screenY + offsetY, 
-                    type: 'ground_item', 
-                    data: { 
-                        x: screenX + offsetX, 
-                        y: screenY + offsetY, 
-                        type: itemType, 
-                        rotation: rotation 
-                    } 
-                });
-            });
-        }
+        tileData.items.forEach((item, i) => {
+            const seed = x * 1000 + y + i * 50;
+            renderList.push({ y: screenY + TILE_SIZE/2, type: 'ground_item', data: { x: screenX + TILE_SIZE/2 + Math.sin(seed)*10, y: screenY + TILE_SIZE/2 + Math.cos(seed)*10, type: item, rotation: Math.sin(seed*0.1)*Math.PI } });
+        });
     }
   }
-
-  for (const id in gameState.players) {
-      const p = gameState.players[id];
-      const isLocal = id === gameState.localPlayerId;
-      // Определяем, движется ли этот игрок. 
-      // Для локального берем из window.isLocalMoving.
-      // Для остальных (сетевых) пока считаем false или можно доработать логику интерполяции.
-      const isMoving = isLocal ? (window as any).isLocalMoving : false; 
-      
-      // Считаем спринт только для локального (для сети нужно передавать флаг спринта в Player)
-      const pSprint = isLocal ? isSprinting : false; 
-
-      renderList.push({ y: p.y, type: 'player', data: { player: p, isLocal: isLocal, isMoving: isMoving, isSprinting: pSprint } });
-  }
-
+  for (const id in gameState.players) renderList.push({ y: gameState.players[id].y + 12, type: 'player', data: { player: gameState.players[id], isLocal: id === gameState.localPlayerId, isMoving: id === gameState.localPlayerId ? (window as any).isLocalMoving : false, isSprinting: id === gameState.localPlayerId ? isSprinting : false } });
   renderList.sort((a, b) => a.y - b.y);
 
   for (const obj of renderList) {
       if (obj.type === 'tree') {
-          const treeCenterX = obj.data.x + 70;
-          const treeCenterY = obj.data.y + 110;
-          const dist = Math.sqrt(Math.pow(me.x - treeCenterX, 2) + Math.pow(me.y - treeCenterY, 2));
-          
+          const dist = Math.sqrt((me.x - (obj.data.x + 70))**2 + (me.y - (obj.data.y + 110))**2);
           ctx.drawImage(textures['tree_trunk'], obj.data.x, obj.data.y, 140, 220);
-          
-          const transparencyRadius = 220; 
-          let alpha = 1.0;
-          if (dist < transparencyRadius) alpha = Math.max(0.3, dist / transparencyRadius);
-          
-          ctx.globalAlpha = alpha;
-          ctx.drawImage(textures['tree_canopy'], obj.data.x, obj.data.y, 140, 220);
-          ctx.globalAlpha = 1.0; 
-
-      } else if (obj.type === 'stone') {
-          const stoneSize = TILE_SIZE * 1.5;
-          const offset = (stoneSize - TILE_SIZE) / 2;
-          ctx.drawImage(textures['stone'], obj.data.x - offset, obj.data.y - offset, stoneSize, stoneSize);
-      } else if (obj.type === 'player') {
-          drawPlayer(ctx, obj.data.player, obj.data.isLocal, obj.data.isMoving, obj.data.isSprinting);
-      } else if (obj.type === 'ground_item') {
-          const item = obj.data;
-          ctx.save();
-          ctx.translate(item.x, item.y);
-          ctx.rotate(item.rotation);
+          if (dist < 220 && me.y < obj.y) ctx.globalAlpha = 0.4;
+          ctx.drawImage(textures['tree_canopy'], obj.data.x, obj.data.y, 140, 220); ctx.globalAlpha = 1.0; 
+      } else if (obj.type === 'stone') ctx.drawImage(textures['stone'], obj.data.x - 10, obj.data.y - 10, TILE_SIZE*1.5, TILE_SIZE*1.5);
+      else if (obj.type === 'big_rock') ctx.drawImage(textures['big_rock'], obj.data.x, obj.data.y, 100, 80);
+      else if (obj.type === 'wall') ctx.drawImage(obj.data.tex, obj.data.x, obj.data.y, TILE_SIZE, TILE_SIZE);
+      else if (obj.type === 'door') {
+          ctx.save(); const { x, y, angle, subType } = obj.data;
+          // Убран минус перед углом для типов 'b' и 'r', чтобы они открывались в правильную сторону от игрока
+          if (subType === 't') { ctx.translate(x, y); ctx.rotate(angle); ctx.drawImage(obj.data.tex, 0, 0, TILE_SIZE, TILE_SIZE); }
+          else if (subType === 'b') { ctx.translate(x, y + TILE_SIZE); ctx.rotate(angle); ctx.drawImage(obj.data.tex, 0, -TILE_SIZE, TILE_SIZE, TILE_SIZE); }
+          else if (subType === 'l') { ctx.translate(x, y); ctx.rotate(angle); ctx.drawImage(obj.data.tex, 0, 0, TILE_SIZE, TILE_SIZE); }
+          else if (subType === 'r') { ctx.translate(x + TILE_SIZE, y); ctx.rotate(angle); ctx.drawImage(obj.data.tex, -TILE_SIZE, 0, TILE_SIZE, TILE_SIZE); }
+          ctx.restore();
+      } else if (obj.type === 'workbench') ctx.drawImage(textures['workbench'], obj.data.x, obj.data.y, TILE_SIZE, TILE_SIZE);
+      else if (obj.type === 'player') drawPlayer(ctx, obj.data.player, obj.data.isLocal, obj.data.isMoving, obj.data.isSprinting);
+      else if (obj.type === 'ground_item') {
+          const item = obj.data; ctx.save(); ctx.translate(item.x, item.y); ctx.rotate(item.rotation);
           const tex = (item.type === 'stick' || item.type === 'wood') ? textures['ground_twig'] : textures['ground_pebble'];
-          if (tex) {
-              const w = (item.type === 'stick' || item.type === 'wood') ? 32 : 16;
-              const h = (item.type === 'stick' || item.type === 'wood') ? 32 : 16;
-              ctx.drawImage(tex, -w/2, -h/2, w, h);
-          }
+          if (tex) { const w = (item.type === 'stick' || item.type === 'wood') ? 32 : 16; ctx.drawImage(tex, -w/2, -w/2, w, w); }
           ctx.restore();
       }
   }
 
-  if (miningProgress > 0) {
-      const barW = 40;
-      const barH = 6;
-      const worldX = targetX * TILE_SIZE + TILE_SIZE / 2;
-      const worldY = targetY * TILE_SIZE; 
-
-      ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fillRect(worldX - barW/2, worldY - 15, barW, barH);
-      
-      ctx.fillStyle = '#4ade80';
-      ctx.fillRect(worldX - barW/2 + 1, worldY - 14, (barW - 2) * miningProgress, barH - 2);
+  // --- DAY/NIGHT OVERLAY ---
+  ctx.restore(); // Выходим из мировых координат для полноэкранного фильтра
+  ctx.save();
+  const time = gameState.worldTime;
+  let nightAlpha = 0;
+  if (!gameState.useTestWorld && time > 14000 && time < 22000) { // В тестовом мире всегда день
+      if (time < 18000) nightAlpha = (time - 14000) / 4000;
+      else nightAlpha = 1 - (time - 18000) / 4000;
   }
-
-  ctx.textAlign = 'center';
-  ctx.font = 'bold 16px "Segoe UI", sans-serif';
-  for (let i = floatingTexts.length - 1; i >= 0; i--) {
-      const ft = floatingTexts[i];
-      ft.life--;
-      ft.y -= 0.5; 
+  if (nightAlpha > 0) {
+      const maxNight = 0.65;
+      ctx.fillStyle = `rgba(10, 10, 40, ${nightAlpha * maxNight})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       
-      const alpha = ft.life / ft.maxLife;
-      ctx.globalAlpha = alpha;
-      ctx.strokeStyle = 'black';
-      ctx.lineWidth = 3;
-      ctx.strokeText(ft.text, ft.x, ft.y);
-      ctx.fillStyle = ft.color;
-      ctx.fillText(ft.text, ft.x, ft.y);
-      ctx.globalAlpha = 1.0;
-      if (ft.life <= 0) floatingTexts.splice(i, 1);
+      // Легкое свечение вокруг игрока
+      const gradient = ctx.createRadialGradient(logicalWidth/2, logicalHeight/2, 0, logicalWidth/2, logicalHeight/2, 200);
+      gradient.addColorStop(0, 'rgba(255, 255, 200, 0.15)');
+      gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.globalCompositeOperation = 'source-over';
+  }
+  ctx.restore();
+
+  // Возвращаемся в мировые координаты для UI элементов над миром (прогресс добычи и т.д.)
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  ctx.translate(logicalWidth / 2, logicalHeight / 2);
+  ctx.scale(cameraZoom, cameraZoom);
+  ctx.translate(-camX, -camY);
+
+  if (miningProgress > 0) {
+      const worldX = targetX * TILE_SIZE + TILE_SIZE / 2, worldY = targetY * TILE_SIZE; 
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(worldX - 20, worldY - 15, 40, 6);
+      ctx.fillStyle = '#4ade80'; ctx.fillRect(worldX - 20 + 1, worldY - 14, 38 * miningProgress, 4);
+  }
+  for (let i = floatingTexts.length - 1; i >= 0; i--) {
+      const ft = floatingTexts[i]; ft.life--; ft.y -= 0.5; ctx.globalAlpha = ft.life / ft.maxLife;
+      ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center'; ctx.strokeStyle = 'black'; ctx.lineWidth = 3; ctx.strokeText(ft.text, ft.x, ft.y); ctx.fillStyle = ft.color; ctx.fillText(ft.text, ft.x, ft.y);
+      ctx.globalAlpha = 1.0; if (ft.life <= 0) floatingTexts.splice(i, 1);
   }
   ctx.restore(); 
 }

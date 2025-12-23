@@ -1,6 +1,10 @@
-
 // state.ts: Централизованное хранилище состояния
 import { Players, Player } from './types';
+
+export interface DoorState {
+    angle: number;   // Текущий угол в радианах
+    vel: number;     // Угловая скорость
+}
 
 export const gameState = {
     players: {} as Players,
@@ -8,8 +12,15 @@ export const gameState = {
     isOffline: false,
     useTestWorld: false,
     showDebugGrid: false,
-    worldSeed: 'terrawilds', // Значение по умолчанию
-    lastServerInventory: { wood: 0, stone: 0 }
+    worldSeed: 'terrawilds', 
+    worldTime: 6000, // 0-24000, 6000 = полдень, 18000 = полночь
+    isTimePaused: false,
+    lastServerInventory: { wood: 0, stone: 0 },
+    doorStates: {} as Record<string, DoorState>,
+    debug: {
+        speedMult: 1,
+        godMode: false
+    }
 };
 
 export function getLocalPlayer(): Player | null {
