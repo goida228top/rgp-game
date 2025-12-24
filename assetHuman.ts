@@ -2,30 +2,20 @@
 import { AnimFrame } from './types';
 import { createHiResCanvas } from './assetUtils';
 
-/**
- * Выбирает случайный цвет из строгого списка базовых цветов.
- */
-function generateUniqueShirtColor(): string {
-    const presetColors = [
-        '#000000', // Черный
-        '#FFFFFF', // Белый
-        '#FF0000', // Красный
-        '#0000FF', // Синий
-        '#FFFF00', // Желтый
-        '#008000', // Зеленый
-        '#FFA500', // Оранжевый
-        '#A52A2A', // Коричневый
-        '#808080'  // Серый
-    ];
-    // Используем Date.now() как часть сида для дополнительного рандома
-    const randomIndex = Math.floor((Math.random() * 100) % presetColors.length);
-    return presetColors[randomIndex];
-}
+// Цвета должны совпадать со списком в server.js
+export const PLAYER_COLORS = [
+    '#000000', // Черный
+    '#FFFFFF', // Белый
+    '#FF0000', // Красный
+    '#0000FF', // Синий
+    '#FFFF00', // Желтый
+    '#008000', // Зеленый
+    '#FFA500', // Оранжевый
+    '#A52A2A', // Коричневый
+    '#808080'  // Серый
+];
 
-// Генерируем цвет один раз при инициализации ассетов
-const randomShirtColor = generateUniqueShirtColor();
-
-function drawHumanFrame(ctx: CanvasRenderingContext2D, frame: AnimFrame, part: string) {
+function drawHumanFrame(ctx: CanvasRenderingContext2D, frame: AnimFrame, part: string, shirtColorOverride: string = '#FFFFFF') {
     const cx = 32; const headRadius = 10; const headY = 20;
     const bodyW = 16; const bodyH = 24; const bodyY = headY + 8; 
     const legW = 5; const legH = 22; const legY = bodyY + bodyH - 2; const legGap = 1;
@@ -36,7 +26,10 @@ function drawHumanFrame(ctx: CanvasRenderingContext2D, frame: AnimFrame, part: s
 
     const currentBodyY = bodyY + bodyBob;
     const currentHeadY = headY + bodyBob;
-    const skinColor = '#ffdbac', pantsColor = '#1e293b', shirtColor = randomShirtColor, shoesColor = '#0f172a';
+    const skinColor = '#ffdbac', pantsColor = '#1e293b', shoesColor = '#0f172a';
+    
+    // Используем переданный цвет или дефолтный
+    const shirtColor = shirtColorOverride;
 
     const drawLimb = (x: number, y: number, w: number, h: number, angle: number, color: string) => {
         ctx.save(); ctx.translate(x, y); ctx.rotate(angle); ctx.fillStyle = color;
@@ -72,9 +65,11 @@ function drawHumanFrame(ctx: CanvasRenderingContext2D, frame: AnimFrame, part: s
 
 export function generateHumanAssets(charSprites: Record<string, HTMLCanvasElement[]>) {
     const w = 64, h = 84;
-    const parts = ['base', 'armor_iron_head', 'armor_iron_body', 'armor_iron_legs'];
+    const armorParts = ['armor_iron_head', 'armor_iron_body', 'armor_iron_legs'];
     const frames: AnimFrame[] = [0, 1, 2];
-    parts.forEach(part => {
+
+    // Генерируем броню (она одинаковая для всех)
+    armorParts.forEach(part => {
         charSprites[part] = [];
         frames.forEach(frame => {
             const [c, ctx] = createHiResCanvas(w, h);
@@ -82,4 +77,25 @@ export function generateHumanAssets(charSprites: Record<string, HTMLCanvasElemen
             charSprites[part][frame] = c;
         });
     });
+
+    // Генерируем базовые тела для КАЖДОГО цвета
+    PLAYER_COLORS.forEach(color => {
+        const spriteKey = `base_${color}`;
+        charSprites[spriteKey] = [];
+        frames.forEach(frame => {
+            const [c, ctx] = createHiResCanvas(w, h);
+            drawHumanFrame(ctx, frame, 'base', color);
+            charSprites[spriteKey][frame] = c;
+        });
+    });
+    
+    // Fallback: генерируем дефолтный белый 'base' на случай ошибок
+    if (!charSprites['base']) {
+         charSprites['base'] = [];
+         frames.forEach(frame => {
+            const [c, ctx] = createHiResCanvas(w, h);
+            drawHumanFrame(ctx, frame, 'base', '#FFFFFF');
+            charSprites['base'][frame] = c;
+        });
+    }
 }

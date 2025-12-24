@@ -50,7 +50,13 @@ function getAnimationFrame(isMoving: boolean, isSprinting: boolean): AnimFrame {
 export function drawCharacterPreview(ctxPreview: CanvasRenderingContext2D, player: Player) {
     const w = ctxPreview.canvas.width; const h = ctxPreview.canvas.height;
     ctxPreview.clearRect(0, 0, w, h); ctxPreview.save(); ctxPreview.translate(w/2, h/2); ctxPreview.scale(1.2, 1.2); ctxPreview.translate(-32, -42); 
-    if (charSprites['base']) ctxPreview.drawImage(charSprites['base'][0], 0, 0, 64, 84);
+    
+    // Выбираем спрайт по цвету игрока
+    const baseKey = `base_${player.color}`;
+    const baseSprite = (charSprites[baseKey] && charSprites[baseKey][0]) ? charSprites[baseKey][0] : (charSprites['base_#FFFFFF'] ? charSprites['base_#FFFFFF'][0] : charSprites['base'][0]);
+    
+    if (baseSprite) ctxPreview.drawImage(baseSprite, 0, 0, 64, 84);
+    
     if (player.equipment.legs && charSprites[player.equipment.legs]) ctxPreview.drawImage(charSprites[player.equipment.legs][0], 0, 0, 64, 84);
     if (player.equipment.body && charSprites[player.equipment.body]) ctxPreview.drawImage(charSprites[player.equipment.body][0], 0, 0, 64, 84);
     if (player.equipment.head && charSprites[player.equipment.head]) ctxPreview.drawImage(charSprites[player.equipment.head][0], 0, 0, 64, 84);
@@ -76,7 +82,14 @@ function drawPlayer(ctx: CanvasRenderingContext2D, player: Player, isLocal: bool
     if (isFlipped) ctx.scale(-1, 1);
     if (isInWater) { ctx.beginPath(); ctx.rect(-40, -100, 80, 100); ctx.clip(); }
     ctx.translate(-32, -60); 
-    if (charSprites['base'] && charSprites['base'][frame]) ctx.drawImage(charSprites['base'][frame], 0, 0, 64, 84);
+
+    // Выбираем правильный спрайт базы на основе цвета игрока
+    const baseKey = `base_${player.color}`;
+    // Fallback: если цвет не найден (например, старый кеш), берем белый
+    const baseSpriteSet = charSprites[baseKey] || charSprites['base_#FFFFFF'] || charSprites['base'];
+    
+    if (baseSpriteSet && baseSpriteSet[frame]) ctx.drawImage(baseSpriteSet[frame], 0, 0, 64, 84);
+    
     if (player.equipment) {
         if (player.equipment.legs && charSprites[player.equipment.legs]) ctx.drawImage(charSprites[player.equipment.legs][frame], 0, 0, 64, 84);
         if (player.equipment.body && charSprites[player.equipment.body]) ctx.drawImage(charSprites[player.equipment.body][frame], 0, 0, 64, 84);

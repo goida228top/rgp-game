@@ -15,6 +15,7 @@ import { initUI, showGameScreen, updateOnlineCount, updateRoomList } from './ui'
 import { initNetwork, emitMovement } from './network';
 import { isChatOpen, toggleChat, addChatMessage } from './chat';
 import { handleInteraction, currentMiningProgress, currentMiningTargetX, currentMiningTargetY, placementRotation, setPlacementRotation } from './interaction';
+import { PLAYER_COLORS } from './assetHuman';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const gameContainer = document.getElementById('game-container') as HTMLDivElement;
@@ -133,7 +134,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const pid = 'offline_hero';
         if (!gameState.worldSeed || gameState.worldSeed === 'terrawilds') gameState.worldSeed = Math.floor(Math.random() * 1999999999 - 999999999).toString();
         const player: Player = {
-            id: pid, x: 0, y: 0, color: '#fff', nickname: "Explorer", direction: 'front',
+            id: pid, x: 0, y: 0, 
+            color: PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)], 
+            nickname: "Explorer", direction: 'front',
             inventory: [], equipment: { head: null, body: null, legs: null },
             stats: { hp: 20, maxHp: 20, hunger: 20, maxHunger: 20, mana: 20, maxMana: 20, energy: 20, maxEnergy: 20, xp: 0, maxXp: 100, level: 1 }
         };
