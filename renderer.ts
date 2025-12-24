@@ -16,6 +16,7 @@ export let cameraZoom = 1.5;
 let camX = 0;
 let camY = 0;
 let isCameraInitialized = false;
+let shouldSnapCamera = false; // Флаг для мгновенной центровки
 
 interface FloatingText {
     x: number; y: number; text: string; life: number; maxLife: number; color: string;
@@ -37,6 +38,7 @@ export function resetCamera(x: number, y: number) {
     camX = x;
     camY = y;
     isCameraInitialized = true;
+    shouldSnapCamera = true; // Принудительно центрируем в следующем кадре
 }
 
 export function adjustZoom(deltaY: number) {
@@ -132,14 +134,26 @@ export function renderGame(miningProgress: number = 0, targetX: number = 0, targ
   if (!ctx || !canvas) return;
   const me = gameState.players[gameState.localPlayerId];
   if (!me) return;
-  if (!isCameraInitialized) { camX = me.x; camY = me.y; isCameraInitialized = true; }
   
-  // Принудительная телепортация камеры, если она слишком далеко (например, при респавне)
+  // Инициализация или принудительная центровка
+  if (!isCameraInitialized || shouldSnapCamera) {
+      camX = me.x;
+      camY = me.y;
+      isCameraInitialized = true;
+      shouldSnapCamera = false;
+  }
+  
+  // Принудительная телепортация камеры, если она слишком далеко (порог уменьшен до 500)
   const dist = Math.sqrt((camX - me.x)**2 + (camY - me.y)**2);
-  if (dist > 1000) { camX = me.x; camY = me.y; }
+  if (dist > 500) { camX = me.x; camY = me.y; }
 
   const lerpFactor = isSprinting ? 0.08 : 0.15;
   camX = lerp(camX, me.x, lerpFactor); camY = lerp(camY, me.y, lerpFactor);
+  
+  // Защита от NaN
+  if (isNaN(camX)) camX = me.x;
+  if (isNaN(camY)) camY = me.y;
+
   const dpr = window.devicePixelRatio || 1;
   
   // ФОН: Если тестовый мир - белый/серый, иначе зеленый

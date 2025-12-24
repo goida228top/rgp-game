@@ -37,6 +37,7 @@ const BASE_WALK_SPEED = 3;
 const BASE_SPRINT_SPEED = 6;
 let fps = 0;
 let lastLoop = 0;
+let isGameRunning = false;
 const fpsEl = document.getElementById('fps-counter');
 let lastRotateTime = 0;
 
@@ -44,6 +45,9 @@ document.addEventListener('DOMContentLoaded', () => {
     initRenderer(canvas);
     generateAssets();
     initInventory();
+    
+    // Сразу устанавливаем размеры канваса, чтобы избежать проблем с координатами
+    resizeCanvas();
     
     const movement = initInput(canvas);
 
@@ -128,7 +132,12 @@ document.addEventListener('DOMContentLoaded', () => {
         resizeCanvas();
         resetCamera(me.x, me.y); // Центрируем камеру на старте
         if (fpsEl) fpsEl.classList.remove('hidden');
-        gameLoop();
+        
+        // Запускаем цикл только если он еще не запущен
+        if (!isGameRunning) {
+            isGameRunning = true;
+            gameLoop();
+        }
     }
 
     function startGameOffline() {
@@ -152,7 +161,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function gameLoop() {
-        if (gameContainer.classList.contains('hidden')) return;
+        if (gameContainer.classList.contains('hidden')) {
+            isGameRunning = false;
+            return;
+        }
         const now = performance.now();
         const delta = now - lastLoop;
         lastLoop = now;
