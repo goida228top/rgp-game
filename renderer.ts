@@ -16,7 +16,7 @@ export let cameraZoom = 1.5;
 let camX = 0;
 let camY = 0;
 let isCameraInitialized = false;
-let shouldSnapCamera = false; // Флаг для мгновенной центровки
+let snapFrames = 0; // Счетчик кадров для принудительной центровки
 
 interface FloatingText {
     x: number; y: number; text: string; life: number; maxLife: number; color: string;
@@ -38,7 +38,7 @@ export function resetCamera(x: number, y: number) {
     camX = x;
     camY = y;
     isCameraInitialized = true;
-    shouldSnapCamera = true; // Принудительно центрируем в следующем кадре
+    snapFrames = 60; // Принудительно держим камеру на игроке 60 кадров (1 секунду)
 }
 
 export function adjustZoom(deltaY: number) {
@@ -135,21 +135,33 @@ export function renderGame(miningProgress: number = 0, targetX: number = 0, targ
   const me = gameState.players[gameState.localPlayerId];
   if (!me) return;
   
-  // Инициализация или принудительная центровка
-  if (!isCameraInitialized || shouldSnapCamera) {
+  // Инициализация, если камера еще не была настроена
+  if (!isCameraInitialized) {
       camX = me.x;
       camY = me.y;
       isCameraInitialized = true;
-      shouldSnapCamera = false;
+      snapFrames = 60; // Включаем режим фиксации
   }
   
-  // Принудительная телепортация камеры, если она слишком далеко (порог уменьшен до 500)
-  const dist = Math.sqrt((camX - me.x)**2 + (camY - me.y)**2);
-  if (dist > 500) { camX = me.x; camY = me.y; }
+  // Принудительная фиксация камеры в первые моменты игры
+  if (snapFrames > 0) {
+      camX = me.x;
+      camY = me.y;
+      snapFrames--;
+  } else {
+      // Стандартное плавное слежение
+      // Если дистанция слишком большая (телепорт, респавн), прыгаем сразу
+      const dist = Math.sqrt((camX - me.x)**2 + (camY - me.y)**2);
+      if (dist > 500) { 
+          camX = me.x; 
+          camY = me.y; 
+      } else {
+          const lerpFactor = isSprinting ? 0.08 : 0.15;
+          camX = lerp(camX, me.x, lerpFactor); 
+          camY = lerp(camY, me.y, lerpFactor);
+      }
+  }
 
-  const lerpFactor = isSprinting ? 0.08 : 0.15;
-  camX = lerp(camX, me.x, lerpFactor); camY = lerp(camY, me.y, lerpFactor);
-  
   // Защита от NaN
   if (isNaN(camX)) camX = me.x;
   if (isNaN(camY)) camY = me.y;
@@ -162,10 +174,13 @@ export function renderGame(miningProgress: number = 0, targetX: number = 0, targ
   
   ctx.save();
   ctx.scale(dpr, dpr);
-  const logicalWidth = canvas.width / dpr; const logicalHeight = canvas.height / dpr;
-  ctx.translate(logicalWidth / 2, logicalHeight / 2);
+  // Используем размеры канваса для точного центрирования
+  const logicalWidth = canvas.width / dpr; 
+  const logicalHeight = canvas.height / dpr;
+  
+  ctx.translate(Math.floor(logicalWidth / 2), Math.floor(logicalHeight / 2));
   ctx.scale(cameraZoom, cameraZoom);
-  ctx.translate(-camX, -camY);
+  ctx.translate(-Math.floor(camX), -Math.floor(camY)); // Округляем для четкости пикселей
 
   const viewW = logicalWidth / cameraZoom, viewH = logicalHeight / cameraZoom;
   const startTileX = Math.floor((camX - viewW/2) / TILE_SIZE) - 1;
@@ -282,9 +297,9 @@ export function renderGame(miningProgress: number = 0, targetX: number = 0, targ
   // Возвращаемся в мировые координаты для UI элементов над миром (прогресс добычи и т.д.)
   ctx.save();
   ctx.scale(dpr, dpr);
-  ctx.translate(logicalWidth / 2, logicalHeight / 2);
+  ctx.translate(Math.floor(logicalWidth / 2), Math.floor(logicalHeight / 2));
   ctx.scale(cameraZoom, cameraZoom);
-  ctx.translate(-camX, -camY);
+  ctx.translate(-Math.floor(camX), -Math.floor(camY));
 
   if (miningProgress > 0) {
       const worldX = targetX * TILE_SIZE + TILE_SIZE / 2, worldY = targetY * TILE_SIZE; 

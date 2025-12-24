@@ -115,10 +115,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function resizeCanvas() { 
         const dpr = window.devicePixelRatio || 1;
-        canvas.width = window.innerWidth * dpr; canvas.height = window.innerHeight * dpr;
-        canvas.style.width = window.innerWidth + 'px'; canvas.style.height = window.innerHeight + 'px';
-        const ctx = canvas.getContext('2d');
-        if (ctx) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; }
+        // Округляем до целых для избежания субпиксельных артефактов
+        const w = Math.floor(window.innerWidth * dpr);
+        const h = Math.floor(window.innerHeight * dpr);
+        
+        // Обновляем только если размеры изменились
+        if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w; 
+            canvas.height = h;
+            canvas.style.width = window.innerWidth + 'px'; 
+            canvas.style.height = window.innerHeight + 'px';
+            const ctx = canvas.getContext('2d');
+            if (ctx) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; }
+        }
     }
 
     function startGame(initialPlayers: Players, playerId: string) {
@@ -130,7 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
         initWorld(me.x, me.y);
         showGameScreen();
         resizeCanvas();
-        resetCamera(me.x, me.y); // Центрируем камеру на старте
+        resetCamera(me.x, me.y); // Центрируем камеру на старте (включит snapFrames)
         if (fpsEl) fpsEl.classList.remove('hidden');
         
         // Запускаем цикл только если он еще не запущен
@@ -165,6 +174,13 @@ document.addEventListener('DOMContentLoaded', () => {
             isGameRunning = false;
             return;
         }
+        
+        // Легковесная проверка изменения размера окна (например, на мобильных при скрытии адресной строки)
+        const dpr = window.devicePixelRatio || 1;
+        if (Math.abs(canvas.width - window.innerWidth * dpr) > 10) {
+            resizeCanvas();
+        }
+
         const now = performance.now();
         const delta = now - lastLoop;
         lastLoop = now;
