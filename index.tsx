@@ -6,7 +6,7 @@ import { initInput, inputState } from './input';
 
 // Modules
 import { gameState, setPlayers, setLocalPlayerId, getLocalPlayer } from './state';
-import { initRenderer, renderGame, adjustZoom, getCameraZoom, addFloatingText } from './renderer';
+import { initRenderer, renderGame, adjustZoom, getCameraZoom, addFloatingText, resetCamera } from './renderer';
 import { generateAssets } from './assets';
 import { initWorld, applyWorldUpdate, canMoveTo, isPositionInWater } from './world';
 import { updateDoorPhysics } from './physics'; 
@@ -126,6 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
         initWorld(me.x, me.y);
         showGameScreen();
         resizeCanvas();
+        resetCamera(me.x, me.y); // Центрируем камеру на старте
         if (fpsEl) fpsEl.classList.remove('hidden');
         gameLoop();
     }

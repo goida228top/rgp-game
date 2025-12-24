@@ -33,6 +33,12 @@ export function initRenderer(canvasEl: HTMLCanvasElement) {
     if (ctx) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; }
 }
 
+export function resetCamera(x: number, y: number) {
+    camX = x;
+    camY = y;
+    isCameraInitialized = true;
+}
+
 export function adjustZoom(deltaY: number) {
     cameraZoom -= deltaY * 0.001;
     if (cameraZoom < 0.8) cameraZoom = 0.8;
@@ -127,6 +133,11 @@ export function renderGame(miningProgress: number = 0, targetX: number = 0, targ
   const me = gameState.players[gameState.localPlayerId];
   if (!me) return;
   if (!isCameraInitialized) { camX = me.x; camY = me.y; isCameraInitialized = true; }
+  
+  // Принудительная телепортация камеры, если она слишком далеко (например, при респавне)
+  const dist = Math.sqrt((camX - me.x)**2 + (camY - me.y)**2);
+  if (dist > 1000) { camX = me.x; camY = me.y; }
+
   const lerpFactor = isSprinting ? 0.08 : 0.15;
   camX = lerp(camX, me.x, lerpFactor); camY = lerp(camY, me.y, lerpFactor);
   const dpr = window.devicePixelRatio || 1;
