@@ -98,8 +98,21 @@ function drawPlayer(ctx: CanvasRenderingContext2D, player: Player, isLocal: bool
     if (isLocal) {
         const item = getSelectedItem();
         if (item) {
-            ctx.font = '24px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; if (isFlipped) ctx.scale(-1, 1);
-            ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 10; ctx.fillText(item.icon, 32, -15 + Math.sin(Date.now() / 300) * 3); ctx.shadowBlur = 0;
+            ctx.font = '24px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; 
+            
+            // Если персонаж развернут, нужно развернуть текст обратно,
+            // но при этом скорректировать координату X, так как система координат смещена
+            if (isFlipped) {
+                ctx.scale(-1, 1);
+                // В развернутой системе координат центр спрайта смещается
+                ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 10; 
+                ctx.fillText(item.icon, -32, -15 + Math.sin(Date.now() / 300) * 3); 
+                ctx.shadowBlur = 0;
+            } else {
+                ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 10; 
+                ctx.fillText(item.icon, 32, -15 + Math.sin(Date.now() / 300) * 3); 
+                ctx.shadowBlur = 0;
+            }
         }
     }
     ctx.restore();
