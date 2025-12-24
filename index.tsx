@@ -84,7 +84,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (Math.abs(me.stats.energy - serverMe.stats.energy) > 5) me.stats.energy = serverMe.stats.energy;
                 }
                 const dist = Math.sqrt(Math.pow(me.x - serverMe.x, 2) + Math.pow(me.y - serverMe.y, 2));
-                if (dist > 150) { me.x = serverMe.x; me.y = serverMe.y; }
+                if (dist > 150) { 
+                    me.x = serverMe.x; 
+                    me.y = serverMe.y;
+                    // Если произошла телепортация (первая синхронизация), сбрасываем камеру в renderer
+                    resetCamera(me.x, me.y);
+                }
                 else serverPlayers[gameState.localPlayerId] = me;
             }
             setPlayers(serverPlayers);

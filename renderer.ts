@@ -38,7 +38,7 @@ export function resetCamera(x: number, y: number) {
     camX = x;
     camY = y;
     isCameraInitialized = true;
-    snapFrames = 60; // Принудительно держим камеру на игроке 60 кадров (1 секунду)
+    snapFrames = 120; // 2 секунды (при 60fps) жесткой привязки
 }
 
 export function adjustZoom(deltaY: number) {
@@ -135,34 +135,34 @@ export function renderGame(miningProgress: number = 0, targetX: number = 0, targ
   const me = gameState.players[gameState.localPlayerId];
   if (!me) return;
   
-  // Инициализация, если камера еще не была настроена
-  if (!isCameraInitialized) {
+  // --- ЛОГИКА КАМЕРЫ (АГРЕССИВНАЯ) ---
+
+  // Если камера не инициализирована или идет фаза "приклеивания" (snapFrames > 0)
+  if (!isCameraInitialized || snapFrames > 0) {
       camX = me.x;
       camY = me.y;
       isCameraInitialized = true;
-      snapFrames = 60; // Включаем режим фиксации
-  }
-  
-  // Принудительная фиксация камеры в первые моменты игры
-  if (snapFrames > 0) {
-      camX = me.x;
-      camY = me.y;
-      snapFrames--;
+      if (snapFrames > 0) snapFrames--;
   } else {
-      // Стандартное плавное слежение
-      // Если дистанция слишком большая (телепорт, респавн), прыгаем сразу
+      // Проверка дистанции: если игрок слишком далеко (например, телепорт или лаг) - мгновенный прыжок
+      // 300 пикселей - это чуть меньше половины экрана по вертикали, надежный порог
       const dist = Math.sqrt((camX - me.x)**2 + (camY - me.y)**2);
-      if (dist > 500) { 
+      
+      // Защита от "нулевого бага": если камера в 0,0, а игрок далеко - прыгаем
+      const isZeroBug = (Math.abs(camX) < 1 && Math.abs(camY) < 1 && (Math.abs(me.x) > 50 || Math.abs(me.y) > 50));
+      
+      if (dist > 300 || isZeroBug) { 
           camX = me.x; 
           camY = me.y; 
       } else {
-          const lerpFactor = isSprinting ? 0.08 : 0.15;
+          // Иначе плавное слежение
+          const lerpFactor = isSprinting ? 0.1 : 0.15; // Чуть быстрее для спринта
           camX = lerp(camX, me.x, lerpFactor); 
           camY = lerp(camY, me.y, lerpFactor);
       }
   }
 
-  // Защита от NaN
+  // Защита от NaN (если координаты игрока пришли битые)
   if (isNaN(camX)) camX = me.x;
   if (isNaN(camY)) camY = me.y;
 
