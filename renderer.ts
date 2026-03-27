@@ -13,10 +13,10 @@ let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
 export let cameraZoom = 1.5; 
 
-let camX = 0;
-let camY = 0;
+export let camX = 0;
+export let camY = 0;
 let isCameraInitialized = false;
-let snapFrames = 0; // Счетчик кадров для принудительной центровки
+let framesSinceStart = 0; // Счетчик кадров рендеринга
 
 interface FloatingText {
     x: number; y: number; text: string; life: number; maxLife: number; color: string;
@@ -36,9 +36,9 @@ export function initRenderer(canvasEl: HTMLCanvasElement) {
 
 export function resetCamera(x: number, y: number) {
     camX = x;
-    camY = y;
+    camY = y - 30;
     isCameraInitialized = true;
-    snapFrames = 120; // 2 секунды (при 60fps) жесткой привязки
+    framesSinceStart = 0;
 }
 
 export function adjustZoom(deltaY: number) {
@@ -135,36 +135,27 @@ export function renderGame(miningProgress: number = 0, targetX: number = 0, targ
   const me = gameState.players[gameState.localPlayerId];
   if (!me) return;
   
-  // --- ЛОГИКА КАМЕРЫ (АГРЕССИВНАЯ) ---
+  framesSinceStart++;
 
-  // Если камера не инициализирована или идет фаза "приклеивания" (snapFrames > 0)
-  if (!isCameraInitialized || snapFrames > 0) {
-      camX = me.x;
-      camY = me.y;
-      isCameraInitialized = true;
-      if (snapFrames > 0) snapFrames--;
+  // --- ЛОГИКА КАМЕРЫ ---
+  
+  // Обычное поведение камеры (плавное слежение)
+  const targetCamY = me.y - 30;
+  const dist = Math.sqrt((camX - me.x)**2 + (camY - targetCamY)**2);
+  
+  // Защита от "нулевого бага" или телепорта: если камера слишком далеко, прыгаем
+  if (dist > 400) { 
+      camX = me.x; 
+      camY = targetCamY; 
   } else {
-      // Проверка дистанции: если игрок слишком далеко (например, телепорт или лаг) - мгновенный прыжок
-      // 300 пикселей - это чуть меньше половины экрана по вертикали, надежный порог
-      const dist = Math.sqrt((camX - me.x)**2 + (camY - me.y)**2);
-      
-      // Защита от "нулевого бага": если камера в 0,0, а игрок далеко - прыгаем
-      const isZeroBug = (Math.abs(camX) < 1 && Math.abs(camY) < 1 && (Math.abs(me.x) > 50 || Math.abs(me.y) > 50));
-      
-      if (dist > 300 || isZeroBug) { 
-          camX = me.x; 
-          camY = me.y; 
-      } else {
-          // Иначе плавное слежение
-          const lerpFactor = isSprinting ? 0.1 : 0.15; // Чуть быстрее для спринта
-          camX = lerp(camX, me.x, lerpFactor); 
-          camY = lerp(camY, me.y, lerpFactor);
-      }
+      const lerpFactor = isSprinting ? 0.1 : 0.15; 
+      camX = lerp(camX, me.x, lerpFactor); 
+      camY = lerp(camY, targetCamY, lerpFactor);
   }
 
-  // Защита от NaN (если координаты игрока пришли битые)
+  // Защита от NaN
   if (isNaN(camX)) camX = me.x;
-  if (isNaN(camY)) camY = me.y;
+  if (isNaN(camY)) camY = me.y - 30;
 
   const dpr = window.devicePixelRatio || 1;
   

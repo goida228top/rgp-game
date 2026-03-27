@@ -38,6 +38,7 @@ const BASE_SPRINT_SPEED = 6;
 let fps = 0;
 let lastLoop = 0;
 let isGameRunning = false;
+let isExhausted = false;
 const fpsEl = document.getElementById('fps-counter');
 let lastRotateTime = 0;
 
@@ -87,8 +88,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (dist > 150) { 
                     me.x = serverMe.x; 
                     me.y = serverMe.y;
-                    // Если произошла телепортация (первая синхронизация), сбрасываем камеру в renderer
-                    resetCamera(me.x, me.y);
                 }
                 else serverPlayers[gameState.localPlayerId] = me;
             }
@@ -135,23 +134,47 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function showLoaderAndExecute(task: () => void) {
+        const loaderEl = document.getElementById('world-loader');
+        if (loaderEl) {
+            loaderEl.classList.remove('hidden-loader');
+            loaderEl.classList.remove('fade-out');
+        }
+        
+        // Даем браузеру время отрисовать загрузчик
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                task();
+                if (loaderEl) {
+                    loaderEl.classList.add('fade-out');
+                    setTimeout(() => {
+                        loaderEl.classList.add('hidden-loader');
+                    }, 1000);
+                }
+            });
+        });
+    }
+
     function startGame(initialPlayers: Players, playerId: string) {
         setPlayers(initialPlayers);
         setLocalPlayerId(playerId);
         resetInventory();
         const me = initialPlayers[playerId];
         if (me && me.inventory) syncInventoryWithServer(me.inventory);
-        initWorld(me.x, me.y);
-        showGameScreen();
-        resizeCanvas();
-        resetCamera(me.x, me.y); // Центрируем камеру на старте (включит snapFrames)
-        if (fpsEl) fpsEl.classList.remove('hidden');
         
-        // Запускаем цикл только если он еще не запущен
-        if (!isGameRunning) {
-            isGameRunning = true;
-            gameLoop();
-        }
+        showLoaderAndExecute(() => {
+            initWorld(me.x, me.y);
+            showGameScreen();
+            resizeCanvas();
+            resetCamera(me.x, me.y);
+            if (fpsEl) fpsEl.classList.remove('hidden');
+            
+            // Запускаем цикл только если он еще не запущен
+            if (!isGameRunning) {
+                isGameRunning = true;
+                gameLoop();
+            }
+        });
     }
 
     function startGameOffline() {
@@ -170,7 +193,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (debugPanel) debugPanel.style.display = 'block';
             addChatMessage("DEV", "ТЕСТОВЫЙ МИР: Бесконечные ресурсы и респавн включены.", "#60a5fa", true);
         } else {
-            addChatMessage("AI", "Мир готов! Смена дня и ночи запущена. Загляни в дебаг-меню (/debug) для управления временем!", "#10b981");
+            addChatMessage("Система", "Мир готов!", "#10b981");
         }
     }
 
@@ -202,16 +225,44 @@ document.addEventListener('DOMContentLoaded', () => {
             updateDoorPhysics(); 
             let canSprint = false; let currentSpeed = BASE_WALK_SPEED; let dx = 0, dy = 0; let newDir: Direction = me.direction;
             if (!isChatOpen) {
+                let moveX = 0, moveY = 0;
+                if (movement.up) { moveY -= 1; newDir = 'back'; }
+                if (movement.down) { moveY += 1; newDir = 'front'; }
+                if (movement.left) { moveX -= 1; newDir = 'left'; }
+                if (movement.right) { moveX += 1; newDir = 'right'; }
+                
+                const isMoving = moveX !== 0 || moveY !== 0;
+
                 if (me.stats) {
-                    if (movement.sprint && me.stats.energy > 0) { canSprint = true; me.stats.energy -= 0.15; }
-                    else if (!movement.sprint && me.stats.energy < me.stats.maxEnergy) me.stats.energy += 0.1;
+                    if (movement.sprint) {
+                        if (!isExhausted && me.stats.energy > 0 && isMoving) {
+                            canSprint = true;
+                            me.stats.energy -= 0.15;
+                            if (me.stats.energy <= 0) {
+                                me.stats.energy = 0;
+                                isExhausted = true;
+                            }
+                        } else {
+                            if (me.stats.energy < me.stats.maxEnergy) {
+                                me.stats.energy = Math.min(me.stats.maxEnergy, me.stats.energy + 0.1);
+                            }
+                        }
+                    } else {
+                        isExhausted = false;
+                        if (me.stats.energy < me.stats.maxEnergy) {
+                            me.stats.energy = Math.min(me.stats.maxEnergy, me.stats.energy + 0.1);
+                        }
+                    }
                 }
+                
                 currentSpeed = (canSprint ? BASE_SPRINT_SPEED : BASE_WALK_SPEED) * gameState.debug.speedMult;
                 if (isPositionInWater(me.x, me.y)) currentSpeed *= 0.5;
-                if (movement.up) { dy -= currentSpeed; newDir = 'back'; }
-                if (movement.down) { dy += currentSpeed; newDir = 'front'; }
-                if (movement.left) { dx -= currentSpeed; newDir = 'left'; }
-                if (movement.right) { dx += currentSpeed; newDir = 'right'; }
+                
+                if (isMoving) {
+                    const length = Math.sqrt(moveX * moveX + moveY * moveY);
+                    dx = (moveX / length) * currentSpeed;
+                    dy = (moveY / length) * currentSpeed;
+                }
             }
             if (dx !== 0 || dy !== 0) { 
                 me.direction = newDir; (window as any).isLocalMoving = true; 

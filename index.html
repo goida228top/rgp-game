@@ -37,6 +37,13 @@
         .animate-fade-in {
             animation: fadeIn 0.3s ease-out forwards;
         }
+        
+        /* Анимация исчезновения загрузчика */
+        .fade-out {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 1s ease-in-out;
+        }
 
         /* --- MODERN INVENTORY STYLES --- */
         .modern-slot {
@@ -163,7 +170,62 @@
             z-index: 10000;
             cursor: default;
         }
+
+        /* --- WORLD LOADER (MINECRAFT STYLE) --- */
+        #world-loader {
+            position: fixed;
+            inset: 0;
+            z-index: 1000; /* Поверх всего */
+            background-color: #3f2e26; /* Цвет грязи */
+            background-image: repeating-linear-gradient(45deg, #382922 25%, transparent 25%, transparent 75%, #382922 75%, #382922), repeating-linear-gradient(45deg, #382922 25%, #3f2e26 25%, #3f2e26 75%, #382922 75%, #382922);
+            background-position: 0 0, 10px 10px;
+            background-size: 20px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            transition: opacity 0.8s ease-in-out;
+        }
+        #world-loader.hidden-loader {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .loader-text {
+            font-size: 24px;
+            font-weight: bold;
+            color: #d1d5db;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 2px 2px 0px #000;
+            animation: pulse-text 1.5s infinite;
+        }
+        @keyframes pulse-text {
+            0%, 100% { opacity: 0.8; }
+            50% { opacity: 1; transform: scale(1.05); }
+        }
+        .loader-bar {
+            width: 300px;
+            height: 10px;
+            background: #1f1511;
+            border: 2px solid #000;
+            position: relative;
+            overflow: hidden;
+        }
+        .loader-progress {
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 100%;
+            background: #10b981;
+            transform: translateX(-100%);
+            animation: load-bar 1.5s ease-out forwards;
+        }
+        @keyframes load-bar {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(0%); }
+        }
     </style>
+<link rel="stylesheet" href="/index.css">
 </head>
 <body class="h-screen w-screen overflow-hidden flex flex-col items-center justify-center font-sans text-slate-200 selection:bg-emerald-500 selection:text-white">
 
@@ -283,6 +345,15 @@
         </div>
     </div>
 
+    <!-- WORLD LOADER SCREEN -->
+    <div id="world-loader" class="hidden-loader">
+        <div class="loader-text">Генерация местности...</div>
+        <div class="loader-bar">
+            <div class="loader-progress"></div>
+        </div>
+        <div class="text-slate-400 text-xs font-mono mt-2">Калибровка камеры • Синхронизация чанков</div>
+    </div>
+
     <!-- ИГРОВОЙ КОНТЕЙНЕР -->
     <div id="game-container" class="hidden fixed inset-0 z-50 bg-black">
         <canvas id="game-canvas"></canvas>
@@ -370,5 +441,6 @@
     </div>
 
     <script type="module" src="./index.tsx"></script>
+<script type="module" src="/index.tsx"></script>
 </body>
 </html>

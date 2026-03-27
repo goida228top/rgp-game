@@ -3,7 +3,7 @@
 import { Player, ObjectType } from './types';
 import { TILE_SIZE } from './constants';
 import { gameState, getLocalPlayer } from './state';
-import { getCameraZoom, addFloatingText } from './renderer';
+import { getCameraZoom, addFloatingText, camX, camY } from './renderer';
 import { inputState } from './input';
 import { getInteractionType, tryPickupItem, pickupItemAt, canPlaceObject, placeObject, placeFloor, destroyTileObject, dropItemOnGround } from './world';
 import { getSelectedItem, setWorkbenchActive, toggleInventory, addItem, isInventoryOpen } from './inventory';
@@ -29,8 +29,8 @@ export function handleInteraction(me: Player) {
     const zoom = getCameraZoom(); 
     const screenCX = window.innerWidth / 2;
     const screenCY = window.innerHeight / 2;
-    const worldX = (inputState.mouseX - screenCX) / zoom + me.x;
-    const worldY = (inputState.mouseY - screenCY) / zoom + me.y;
+    const worldX = (inputState.mouseX - screenCX) / zoom + camX;
+    const worldY = (inputState.mouseY - screenCY) / zoom + camY;
     const tileX = Math.floor(worldX / TILE_SIZE);
     const tileY = Math.floor(worldY / TILE_SIZE);
     const tileWorldX = tileX * TILE_SIZE + TILE_SIZE/2;

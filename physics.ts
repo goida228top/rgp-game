@@ -22,12 +22,31 @@ export function isPositionInWater(x: number, y: number): boolean {
 }
 
 export function updateDoorPhysics() {
-    const keys = Object.keys(world);
     const players = Object.values(gameState.players);
+    const checkedTiles = new Set<string>();
     
-    for (const key of keys) {
+    // Активные двери (которые еще не закрылись)
+    for (const key in gameState.doorStates) {
+        const state = gameState.doorStates[key];
+        if (Math.abs(state.angle) > 0.01 || Math.abs(state.vel) > 0.01) {
+            checkedTiles.add(key);
+        }
+    }
+
+    // Двери рядом с игроками
+    for (const p of players) {
+        const tx = Math.floor(p.x / TILE_SIZE);
+        const ty = Math.floor(p.y / TILE_SIZE);
+        for (let dx = -2; dx <= 2; dx++) {
+            for (let dy = -2; dy <= 2; dy++) {
+                checkedTiles.add(`${tx + dx},${ty + dy}`);
+            }
+        }
+    }
+    
+    for (const key of checkedTiles) {
         const tile = world[key];
-        if (!tile.object.startsWith('door_wood')) continue;
+        if (!tile || !tile.object.startsWith('door_wood')) continue;
 
         if (!gameState.doorStates[key]) {
             gameState.doorStates[key] = { angle: 0, vel: 0 };
